@@ -1,0 +1,36 @@
+{
+  "camera": {
+    "source": 0,
+    "width": 1280,
+    "height": 720,
+    "fps": 30
+  },
+  "tracking": {
+    "tracker_type": "CSRT",
+    "roi": null
+  },
+  "guidance": {
+    "black_threshold": 50,
+    "ray_angles_deg": [-60, 0, 60],
+    "ray_max_length": 200,
+    "evasive_distance": 80,
+    "default_speed": 20
+  },
+  "ble": {
+    "device_mac": "f9:af:3c:e2:d2:f5",
+    "characteristic_uuid": "6e400002-b5a3-f393-e0a9-e50e24dcca9e",
+    "device_identifier": "bf0a00082800",
+    "command_rate_hz": 200,
+    "connection_timeout_s": 5,
+    "reconnect_attempts": 3
+  },
+  "control": {
+    "speed_min": 0,
+    "speed_max": 100,
+    "steering_limit": 30,
+    "light_on": true
+  },
+  "ui": {
+    "show_window": true
+  }
+}

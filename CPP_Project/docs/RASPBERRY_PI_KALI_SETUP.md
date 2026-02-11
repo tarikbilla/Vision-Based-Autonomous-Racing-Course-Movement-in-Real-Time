@@ -209,7 +209,7 @@ scp -r /path/to/project kali@raspberry-pi-ip:~/IoT-Project-Vision-based-autonomo
 ```bash
 cd ~/IoT-Project-Vision-based-autonomous-RC-car-control-system/apl
 mkdir -p build
-cd build
+ccd build
 ```
 
 ### 5.2 Configure with CMake

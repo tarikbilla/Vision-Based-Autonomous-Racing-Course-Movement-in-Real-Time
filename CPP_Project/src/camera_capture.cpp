@@ -38,49 +38,80 @@ bool CameraCapture::initialize(int camera_index, int width, int height, int fps)
         cap_.release();
     }
     
-    // Open camera - try V4L2 backend first (more reliable on Linux)
-    // Format: "v4l2:///dev/video0" or just index
-    std::string camera_path = "v4l2:///dev/video" + std::to_string(camera_index);
+    // Open camera - try multiple methods in order of reliability
+    std::cerr << "Attempting to open camera " << camera_index << "..." << std::endl;
     
-    // Try V4L2 backend first
-    cap_.open(camera_path, cv::CAP_V4L2);
+    // Method 1: Direct index with V4L2 (most common on Linux)
+    cap_.open(camera_index, cv::CAP_V4L2);
     
-    // If V4L2 fails, try default backend
+    // Method 2: Direct device path with V4L2
     if (!cap_.isOpened()) {
-        std::cerr << "Warning: V4L2 backend failed, trying default backend..." << std::endl;
+        std::string dev_path = "/dev/video" + std::to_string(camera_index);
+        std::cerr << "Method 1 failed. Trying direct device path: " << dev_path << std::endl;
+        cap_.open(dev_path, cv::CAP_V4L2);
+    }
+    
+    // Method 3: Try with default backend (auto-detect)
+    if (!cap_.isOpened()) {
+        std::cerr << "Method 2 failed. Trying default backend with index..." << std::endl;
         cap_.open(camera_index);
     }
     
-    // If still fails, try direct device path
+    // Method 4: Try direct path with default backend
     if (!cap_.isOpened()) {
         std::string dev_path = "/dev/video" + std::to_string(camera_index);
-        std::cerr << "Warning: Default backend failed, trying direct path: " << dev_path << std::endl;
-        cap_.open(dev_path, cv::CAP_V4L2);
+        std::cerr << "Method 3 failed. Trying direct path with default backend: " << dev_path << std::endl;
+        cap_.open(dev_path);
     }
     
     if (!cap_.isOpened()) {
         std::cerr << "Error: Could not open camera " << camera_index << std::endl;
-        std::cerr << "Tried: v4l2:///dev/video" << camera_index << ", index " << camera_index 
-                  << ", and /dev/video" << camera_index << std::endl;
-        std::cerr << "Please check:" << std::endl;
-        std::cerr << "  1. Camera is connected and powered on" << std::endl;
-        std::cerr << "  2. User has video group permissions: sudo usermod -a -G video $USER" << std::endl;
-        std::cerr << "  3. Camera device exists: ls -l /dev/video*" << std::endl;
+        std::cerr << "Tried all methods:" << std::endl;
+        std::cerr << "  1. Index " << camera_index << " with V4L2 backend" << std::endl;
+        std::cerr << "  2. /dev/video" << camera_index << " with V4L2 backend" << std::endl;
+        std::cerr << "  3. Index " << camera_index << " with default backend" << std::endl;
+        std::cerr << "  4. /dev/video" << camera_index << " with default backend" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "Troubleshooting:" << std::endl;
+        std::cerr << "  1. Verify camera is accessible: v4l2-ctl --device=/dev/video" << camera_index << " --all" << std::endl;
+        std::cerr << "  2. Check permissions: ls -l /dev/video" << camera_index << std::endl;
+        std::cerr << "  3. Add user to video group: sudo usermod -a -G video $USER" << std::endl;
+        std::cerr << "  4. Try different camera index (0, 1, 2, etc.)" << std::endl;
+        std::cerr << "  5. Test with: ffmpeg -f v4l2 -i /dev/video" << camera_index << " -frames:v 1 test.jpg" << std::endl;
         return false;
     }
     
-    // Set properties
+    // Set properties (try to set, but don't fail if they don't stick)
     cap_.set(cv::CAP_PROP_FRAME_WIDTH, target_width_);
     cap_.set(cv::CAP_PROP_FRAME_HEIGHT, target_height_);
     cap_.set(cv::CAP_PROP_FPS, target_fps_);
+    
+    // For V4L2, also try setting format explicitly
+    if (cap_.getBackendName() == "V4L2") {
+        cap_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('Y', 'U', 'Y', 'V'));
+    }
     
     // Verify actual resolution
     int actual_width = static_cast<int>(cap_.get(cv::CAP_PROP_FRAME_WIDTH));
     int actual_height = static_cast<int>(cap_.get(cv::CAP_PROP_FRAME_HEIGHT));
     int actual_fps = static_cast<int>(cap_.get(cv::CAP_PROP_FPS));
     
+    if (actual_width == 0 || actual_height == 0) {
+        std::cerr << "Warning: Camera opened but resolution is 0x0. Trying to read a test frame..." << std::endl;
+        cv::Mat test_frame;
+        if (cap_.read(test_frame) && !test_frame.empty()) {
+            actual_width = test_frame.cols;
+            actual_height = test_frame.rows;
+            std::cout << "Camera working! Actual resolution from frame: " << actual_width << "x" << actual_height << std::endl;
+        } else {
+            std::cerr << "Error: Could not read test frame from camera" << std::endl;
+            cap_.release();
+            return false;
+        }
+    }
+    
     std::cout << "Camera initialized: " << actual_width << "x" << actual_height 
-              << " @ " << actual_fps << " FPS" << std::endl;
+              << " @ " << actual_fps << " FPS (backend: " << cap_.getBackendName() << ")" << std::endl;
     
     return true;
 }
