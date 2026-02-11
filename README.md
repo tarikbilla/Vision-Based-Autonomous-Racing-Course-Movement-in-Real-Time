@@ -13,19 +13,25 @@ pip install -r requirements.txt
 Run a simulation (no hardware required):
 
 ```bash
-python -m rc_autonomy run --simulate --duration 10
+python run_autonomy.py --simulate --duration 10
 ```
 
 Run with the car and camera:
 
 ```bash
-python -m rc_autonomy run --device f9:af:3c:e2:d2:f5
+python run_autonomy.py --device f9:af:3c:e2:d2:f5
 ```
 
 Scan/connect to verify BLE:
 
 ```bash
 python -m rc_autonomy scan --device f9:af:3c:e2:d2:f5
+
+You can also run the module directly if preferred:
+
+```bash
+python -m rc_autonomy run --simulate --duration 10
+```
 ```
 
 ## Configuration
