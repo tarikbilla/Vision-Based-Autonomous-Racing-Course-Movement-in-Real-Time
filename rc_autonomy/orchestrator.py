@@ -36,13 +36,16 @@ class ControlOrchestrator:
         self.ble = ble
         self.options = options
         self.frame_queue: Queue[Frame] = Queue(maxsize=5)
+        self.render_queue: Queue[tuple] = Queue(maxsize=1)
         self.stop_event = threading.Event()
         self.latest_control = ControlVector(light_on=True, speed=0, right_turn_value=0, left_turn_value=0)
         self.latest_heading = 0.0
         self._threads: list[threading.Thread] = []
+        self.roi_selected = False
 
     def start(self) -> None:
         self.stop_event.clear()
+        self.roi_selected = False
         self._threads = [
             threading.Thread(target=self._camera_loop, daemon=True),
             threading.Thread(target=self._tracking_loop, daemon=True),
@@ -50,6 +53,9 @@ class ControlOrchestrator:
         ]
         for thread in self._threads:
             thread.start()
+        # Main thread runs UI/rendering loop (required by OpenCV)
+        if self.options.show_window:
+            self._ui_loop()
 
     def stop(self) -> None:
         self.stop_event.set()
@@ -68,29 +74,55 @@ class ControlOrchestrator:
                     continue
         except Exception:
             self.stop_event.set()
+            self.latest_control = ControlVector(light_on=True, speed=0, right_turn_value=0, left_turn_value=0)
 
     def _tracking_loop(self) -> None:
         initialized = False
+        frame_count = 0
+        skip_counter = 0
+        frame_skip = 2  # Process every 3rd frame
         while not self.stop_event.is_set():
             try:
                 frame = self.frame_queue.get(timeout=0.2)
             except Empty:
                 continue
+            skip_counter += 1
+            if skip_counter <= frame_skip:
+                continue  # Skip frames
+            skip_counter = 0
             image = frame.image
             if not initialized:
-                self.tracker.initialize(image, None)
-                initialized = True
+                if not self.roi_selected:
+                    continue  # Wait for ROI selection from main thread
+                print("[*] Initializing tracker with selected ROI...")
+                try:
+                    self.tracker.initialize(image, None)
+                    initialized = True
+                    print("[✓] Tracker initialized. Starting autonomous control...")
+                except Exception as exc:
+                    print(f"[!] Tracker initialization failed: {exc}")
+                    self.stop_event.set()
+                    continue
             try:
                 tracked = self.tracker.update(image)
                 rays, control = self.boundary.analyze(image, tracked.center, tracked.movement)
                 self.latest_control = control
                 self.latest_heading = self.boundary._heading_from_movement(tracked.movement)
-                if self.options.show_window:
-                    self._render(image, tracked, rays)
-            except Exception:
+                frame_count += 1
+                if frame_count % 30 == 0:  # Log every 30 frames (approx 1/sec @ 30fps)
+                    print(f"[{frame_count}] Center: {tracked.center} | "
+                          f"Speed: {control.speed:3d} | "
+                          f"Left: {control.left_turn_value:2d} | "
+                          f"Right: {control.right_turn_value:2d} | "
+                          f"Rays: L={rays[0].distance:3d} C={rays[1].distance:3d} R={rays[2].distance:3d}")
+                # Queue render data for main thread
+                try:
+                    self.render_queue.put_nowait((image.copy(), tracked, rays))
+                except Exception:
+                    pass
+            except Exception as exc:
+                print(f"[!] Tracking error: {exc}")
                 self.latest_control = ControlVector(light_on=True, speed=0, right_turn_value=0, left_turn_value=0)
-        if self.options.show_window:
-            self._close_window()
 
     def _ble_loop(self) -> None:
         interval = 1.0 / max(1, self.options.command_rate_hz)
@@ -112,6 +144,47 @@ class ControlOrchestrator:
         import cv2
 
         cv2.destroyAllWindows()
+
+    def _display_initial_frame(self) -> None:
+        """Display first camera frame for ROI selection (main thread)."""
+        import cv2
+
+        self.camera.open()
+        print("[*] Waiting for first camera frame...")
+        try:
+            frame_iter = self.camera.frames()
+            frame = next(frame_iter)
+            print(f"[✓] Camera opened successfully (source: {self.camera.source}). Select RC Car ROI in the window.")
+            cv2.imshow("Camera - Select RC Car (ROI)", frame.image)
+            cv2.waitKey(1)
+            time.sleep(0.5)
+        except StopIteration:
+            print("[!] Failed to get first frame from camera")
+            raise RuntimeError("Camera initialization failed")
+        except Exception as exc:
+            print(f"[!] Camera error: {exc}")
+            raise
+
+    def _ui_loop(self) -> None:
+        """Main thread UI loop for OpenCV display and ROI selection."""
+        import cv2
+
+        self._display_initial_frame()
+        self.roi_selected = True
+        print("[*] ROI selection complete. Tracking started.")
+
+        while not self.stop_event.is_set():
+            try:
+                image, tracked, rays = self.render_queue.get(timeout=0.1)
+                self._render(image, tracked, rays)
+            except Empty:
+                # Keep window responsive
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    self.stop_event.set()
+            except Exception:
+                pass
+
+        self._close_window()
 
 
 def build_orchestrator(simulate: bool, config, ble: BLEClient) -> ControlOrchestrator:

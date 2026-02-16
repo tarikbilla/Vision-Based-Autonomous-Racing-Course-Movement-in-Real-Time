@@ -108,7 +108,7 @@ def find_drift_car(device_name_or_mac=None):
         
         if is_drift:
             drift_candidates.append((i, peripheral, name, address))
-            print(f"      ⭐ DRIFT car candidate found!")
+            print(f"       DRIFT car candidate found!")
     
     print("-" * 60)
     
@@ -125,7 +125,7 @@ def find_drift_car(device_name_or_mac=None):
     
     # Use first candidate
     idx, peripheral, name, address = drift_candidates[0]
-    print(f"\n✅ Found DRIFT car:")
+    print(f"\n Found DRIFT car:")
     print(f"   Name: {name}")
     print(f"   MAC: {address}")
     
@@ -142,7 +142,7 @@ def connect_to_car(peripheral, characteristic_uuid):
     
     try:
         peripheral.connect()
-        print("✅ Connected successfully!")
+        print(" Connected successfully!")
         
         # Small delay to allow service discovery
         time.sleep(1)
@@ -168,12 +168,12 @@ def connect_to_car(peripheral, characteristic_uuid):
                 # Check if this is our target characteristic
                 if char_uuid.lower() == characteristic_uuid.lower():
                     target_characteristic = (service.uuid(), char_uuid)
-                    print(f"      ⭐ MATCH! This is the control characteristic")
+                    print(f"       MATCH! This is the control characteristic")
         
         print("-" * 60)
         
         if target_characteristic is None:
-            print(f"\n⚠️  Warning: Target characteristic '{characteristic_uuid}' not found!")
+            print(f"\n Warning: Target characteristic '{characteristic_uuid}' not found!")
             print("\nAvailable characteristics listed above.")
             print("\nTrying to use first writable characteristic...")
             
@@ -190,15 +190,15 @@ def connect_to_car(peripheral, characteristic_uuid):
                     continue
         
         if target_characteristic:
-            print(f"\n✅ Using characteristic: {target_characteristic[1]}")
+            print(f"\n Using characteristic: {target_characteristic[1]}")
         else:
-            print("\n❌ No suitable characteristic found!")
+            print("\n No suitable characteristic found!")
             print("You may need to check the DRIFT app or manual for the correct UUID.")
         
         return peripheral, target_characteristic
         
     except Exception as e:
-        print(f"\n❌ Error connecting: {e}")
+        print(f"\n Error connecting: {e}")
         print("\nTroubleshooting:")
         print("  1. Make sure car is not connected to another device (phone app)")
         print("  2. Disconnect from DRIFT app first")
@@ -208,11 +208,11 @@ def connect_to_car(peripheral, characteristic_uuid):
 def send_command(peripheral, characteristic, command_hex):
     """Send BLE command."""
     if peripheral is None:
-        print("❌ Error: Not connected!")
+        print(" Error: Not connected!")
         return False
     
     if characteristic is None:
-        print("❌ Error: No characteristic selected!")
+        print(" Error: No characteristic selected!")
         return False
     
     try:
@@ -227,12 +227,12 @@ def send_command(peripheral, characteristic, command_hex):
             try:
                 peripheral.write_command(service_uuid, char_uuid, command_bytes)
             except Exception as e:
-                print(f"❌ Write error: {e}")
+                print(f" Write error: {e}")
                 return False
         
         return True
     except Exception as e:
-        print(f"❌ Error sending command: {e}")
+        print(f" Error sending command: {e}")
         return False
 
 def interactive_mode(peripheral, characteristic):
@@ -269,13 +269,13 @@ def interactive_mode(peripheral, characteristic):
                 light = 1
                 left = 0
                 right = 0
-                print("🚗 START: Speed=20, Lights ON")
+                print(" START: Speed=20, Lights ON")
             elif cmd == 't':
                 speed = 0
                 light = 0
                 left = 0
                 right = 0
-                print("🛑 STOP")
+                print(" STOP")
             elif cmd == 'l':
                 left = 20
                 right = 0
@@ -308,7 +308,7 @@ def interactive_mode(peripheral, characteristic):
                     speed = max(0, speed - 10)
                     print(f"🐌 Speed decreased to: {speed}")
             elif cmd == 'q':
-                print("👋 Quitting...")
+                print(" Quitting...")
                 # Send stop command
                 stop_cmd = generate_command(0, 0, 0, 0)
                 print(f"Sending STOP command: {stop_cmd}")
@@ -316,23 +316,23 @@ def interactive_mode(peripheral, characteristic):
                 time.sleep(0.2)
                 break
             else:
-                print("❓ Unknown command. Type 'q' to quit.")
+                print(" Unknown command. Type 'q' to quit.")
                 continue
             
             # Generate and send command
             command = generate_command(light, speed, left, right)
-            print(f"📤 Command: {command}")
+            print(f" Command: {command}")
             
             if send_command(peripheral, characteristic, command):
-                print("✅ Command sent successfully")
+                print(" Command sent successfully")
             else:
-                print("❌ Failed to send command")
+                print(" Failed to send command")
             
             # Small delay
             time.sleep(0.05)
             
         except KeyboardInterrupt:
-            print("\n\n⚠️  Interrupted. Sending STOP command...")
+            print("\n\n Interrupted. Sending STOP command...")
             stop_cmd = generate_command(0, 0, 0, 0)
             send_command(peripheral, characteristic, stop_cmd)
             break
@@ -363,18 +363,18 @@ def main():
     peripheral, mac_address = find_drift_car(device_name_or_mac)
     
     if peripheral is None:
-        print("\n❌ Could not find DRIFT car. Exiting.")
+        print("\n Could not find DRIFT car. Exiting.")
         return 1
     
     # Connect
     peripheral, characteristic = connect_to_car(peripheral, characteristic_uuid)
     
     if peripheral is None:
-        print("\n❌ Failed to connect. Exiting.")
+        print("\n Failed to connect. Exiting.")
         return 1
     
     if characteristic is None:
-        print("\n⚠️  Warning: Could not find characteristic.")
+        print("\n Warning: Could not find characteristic.")
         print("You can still try to send commands, but they may not work.")
         print("Press Enter to continue anyway, or Ctrl+C to exit...")
         try:
@@ -391,7 +391,7 @@ def main():
     stop_cmd = generate_command(0, 0, 0, 0)
     print(f"\n1. STOP command: {stop_cmd}")
     if send_command(peripheral, characteristic, stop_cmd):
-        print("   ✅ Sent")
+        print("    Sent")
     time.sleep(0.5)
     
     # Start
@@ -399,13 +399,13 @@ def main():
     print(f"\n2. START command: {start_cmd}")
     print("   (Car should move forward for 2 seconds)")
     if send_command(peripheral, characteristic, start_cmd):
-        print("   ✅ Sent")
+        print("    Sent")
     time.sleep(2)
     
     # Stop again
     print(f"\n3. STOP command: {stop_cmd}")
     if send_command(peripheral, characteristic, stop_cmd):
-        print("   ✅ Sent")
+        print("    Sent")
     time.sleep(0.5)
     
     # Interactive mode
@@ -420,9 +420,9 @@ def main():
     print("="*60)
     try:
         peripheral.disconnect()
-        print("✅ Disconnected.")
+        print(" Disconnected.")
     except Exception as e:
-        print(f"⚠️  Disconnect warning: {e}")
+        print(f" Disconnect warning: {e}")
     
     return 0
 
@@ -430,10 +430,10 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print("\n\n⚠️  Interrupted by user.")
+        print("\n\n Interrupted by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n\n❌ Unexpected error: {e}")
+        print(f"\n\n Unexpected error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

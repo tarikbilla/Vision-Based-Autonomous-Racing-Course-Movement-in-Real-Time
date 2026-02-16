@@ -22,6 +22,13 @@ Run with the car and camera:
 python run_autonomy.py --device f9:af:3c:e2:d2:f5
 ```
 
+If your system shows UUID-style BLE addresses (macOS often does), list devices and pick an index:
+
+```bash
+python run_autonomy.py --list-devices
+python run_autonomy.py --device-index 0
+```
+
 Scan/connect to verify BLE:
 
 ```bash

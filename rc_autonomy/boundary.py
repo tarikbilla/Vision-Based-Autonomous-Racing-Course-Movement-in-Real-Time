@@ -64,21 +64,42 @@ class BoundaryDetector:
         for angle in self.ray_angles_deg:
             distance = self._cast_ray(gray, center, heading + angle)
             rays.append(RayResult(angle_deg=angle, distance=distance))
+        
         min_distance = min(r.distance for r in rays)
         left_distance = rays[0].distance
         center_distance = rays[1].distance
         right_distance = rays[2].distance
+        
+        # Always drive at default speed
         speed = self.default_speed
         left_turn = 0
         right_turn = 0
+        
+        # Steer towards the farthest direction (away from boundaries)
         if min_distance < self.evasive_distance:
-            speed = max(0, self.default_speed - 10)
-            if left_distance < right_distance:
-                right_turn = self.steering_limit
-            elif right_distance < left_distance:
+            # Emergency: boundary detected, reduce speed
+            speed = max(5, self.default_speed - 15)
+            
+            # Steer away from the closest boundary
+            if left_distance > center_distance and left_distance > right_distance:
+                # Turn left (farthest distance is left)
                 left_turn = self.steering_limit
-            elif center_distance < self.evasive_distance:
+            elif right_distance > center_distance and right_distance > left_distance:
+                # Turn right (farthest distance is right)
                 right_turn = self.steering_limit
+            elif center_distance < self.evasive_distance:
+                # Boundary ahead and close: make a stronger turn
+                if left_distance > right_distance:
+                    left_turn = self.steering_limit
+                else:
+                    right_turn = self.steering_limit
+        else:
+            # No immediate boundary: steer gently towards wider path
+            if left_distance > right_distance + 30:
+                left_turn = max(0, self.steering_limit // 3)
+            elif right_distance > left_distance + 30:
+                right_turn = max(0, self.steering_limit // 3)
+        
         control = ControlVector(
             light_on=self.light_on,
             speed=clamp(speed, 0, 255),

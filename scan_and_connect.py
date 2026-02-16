@@ -57,7 +57,7 @@ def scan_all_bluetooth_devices():
     # Get adapters
     adapters = simplepyble.Adapter.get_adapters()
     if len(adapters) == 0:
-        print("❌ Error: No BLE adapters found!")
+        print(" Error: No BLE adapters found!")
         print("Make sure Bluetooth is enabled on your Mac.")
         return None, []
     
@@ -72,12 +72,12 @@ def scan_all_bluetooth_devices():
         adapter.scan_for(10000)  # Scan for 10 seconds
         peripherals = adapter.scan_get_results()
     except Exception as e:
-        print(f"❌ Error during scan: {e}")
+        print(f" Error during scan: {e}")
         print("Make sure Bluetooth is enabled in System Settings.")
         return None, []
     
     if len(peripherals) == 0:
-        print("❌ No Bluetooth devices found!")
+        print(" No Bluetooth devices found!")
         print("\nTroubleshooting:")
         print("  1. Make sure Bluetooth is enabled")
         print("  2. Make sure devices are powered on")
@@ -85,7 +85,7 @@ def scan_all_bluetooth_devices():
         return None, []
     
     print("="*70)
-    print(f"✅ Found {len(peripherals)} Bluetooth device(s):")
+    print(f" Found {len(peripherals)} Bluetooth device(s):")
     print("="*70)
     print()
     
@@ -145,12 +145,12 @@ def select_device(device_list):
                 device_num = int(choice)
                 if 1 <= device_num <= len(device_list):
                     selected = device_list[device_num - 1]
-                    print(f"\n✅ Selected: {selected['name']} [{selected['address']}]")
+                    print(f"\n Selected: {selected['name']} [{selected['address']}]")
                     return selected
                 else:
-                    print(f"❌ Invalid number. Please enter 1-{len(device_list)}")
+                    print(f" Invalid number. Please enter 1-{len(device_list)}")
             except ValueError:
-                print("❌ Invalid input. Please enter a number or 'q'")
+                print(" Invalid input. Please enter a number or 'q'")
         except KeyboardInterrupt:
             print("\n\n👋 Cancelled by user.")
             return None
@@ -207,7 +207,7 @@ def discover_services_and_characteristics(peripheral):
         return all_characteristics
         
     except Exception as e:
-        print(f"❌ Error discovering services: {e}")
+        print(f" Error discovering services: {e}")
         return []
 
 def select_characteristic(all_characteristics):
@@ -263,12 +263,12 @@ def select_characteristic(all_characteristics):
                 char_num = int(choice)
                 if 1 <= char_num <= len(all_characteristics):
                     selected = all_characteristics[char_num - 1]
-                    print(f"\n✅ Selected: {selected['char_uuid']}")
+                    print(f"\n Selected: {selected['char_uuid']}")
                     return (selected['service_uuid'], selected['char_uuid'])
                 else:
-                    print(f"❌ Invalid number. Please enter 1-{len(all_characteristics)}")
+                    print(f" Invalid number. Please enter 1-{len(all_characteristics)}")
             except ValueError:
-                print("❌ Invalid input. Please enter a number or 'q'")
+                print(" Invalid input. Please enter a number or 'q'")
         except KeyboardInterrupt:
             print("\n\n👋 Cancelled by user.")
             return None
@@ -282,10 +282,10 @@ def connect_to_device(peripheral):
     try:
         print("Connecting...")
         peripheral.connect()
-        print("✅ Connected successfully!")
+        print(" Connected successfully!")
         return True
     except Exception as e:
-        print(f"❌ Connection failed: {e}")
+        print(f" Connection failed: {e}")
         print("\nTroubleshooting:")
         print("  1. Make sure device is not connected to another device")
         print("  2. Try disconnecting from phone app first")
@@ -311,10 +311,10 @@ def send_command(peripheral, characteristic, command_hex):
                 peripheral.write_command(service_uuid, char_uuid, command_bytes)
                 return True
             except Exception as e:
-                print(f"❌ Write error: {e}")
+                print(f" Write error: {e}")
                 return False
     except Exception as e:
-        print(f"❌ Error sending command: {e}")
+        print(f" Error sending command: {e}")
         return False
 
 def interactive_control(peripheral, characteristic):
@@ -406,14 +406,14 @@ def interactive_control(peripheral, characteristic):
             print(f"📤 Command: {command}")
             
             if send_command(peripheral, characteristic, command):
-                print("✅ Command sent successfully")
+                print(" Command sent successfully")
             else:
-                print("❌ Failed to send command")
+                print(" Failed to send command")
             
             time.sleep(0.05)
             
         except KeyboardInterrupt:
-            print("\n\n⚠️  Interrupted. Sending STOP command...")
+            print("\n\n  Interrupted. Sending STOP command...")
             stop_cmd = generate_command(0, 0, 0, 0)
             send_command(peripheral, characteristic, stop_cmd)
             break
@@ -445,7 +445,7 @@ def main():
     all_characteristics = discover_services_and_characteristics(peripheral)
     
     if not all_characteristics:
-        print("❌ No characteristics found!")
+        print(" No characteristics found!")
         try:
             peripheral.disconnect()
         except:
@@ -456,7 +456,7 @@ def main():
     characteristic = select_characteristic(all_characteristics)
     
     if characteristic is None:
-        print("❌ No characteristic selected!")
+        print(" No characteristic selected!")
         try:
             peripheral.disconnect()
         except:
@@ -472,7 +472,7 @@ def main():
     stop_cmd = generate_command(0, 0, 0, 0)
     print(f"\n1. STOP command: {stop_cmd}")
     if send_command(peripheral, characteristic, stop_cmd):
-        print("   ✅ Sent")
+        print("    Sent")
     time.sleep(0.5)
     
     # Start
@@ -480,13 +480,13 @@ def main():
     print(f"\n2. START command: {start_cmd}")
     print("   (Car should move forward for 2 seconds)")
     if send_command(peripheral, characteristic, start_cmd):
-        print("   ✅ Sent")
+        print("    Sent")
     time.sleep(2)
     
     # Stop again
     print(f"\n3. STOP command: {stop_cmd}")
     if send_command(peripheral, characteristic, stop_cmd):
-        print("   ✅ Sent")
+        print("    Sent")
     time.sleep(0.5)
     
     # Step 7: Interactive mode
@@ -498,9 +498,9 @@ def main():
     print("="*70)
     try:
         peripheral.disconnect()
-        print("✅ Disconnected.")
+        print(" Disconnected.")
     except Exception as e:
-        print(f"⚠️  Disconnect warning: {e}")
+        print(f"  Disconnect warning: {e}")
     
     return 0
 
@@ -508,10 +508,10 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print("\n\n⚠️  Interrupted by user.")
+        print("\n\n  Interrupted by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n\n❌ Unexpected error: {e}")
+        print(f"\n\n Unexpected error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

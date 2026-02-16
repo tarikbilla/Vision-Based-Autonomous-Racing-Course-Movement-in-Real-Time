@@ -37,7 +37,7 @@ class OpenCVTracker(Tracker):
             return cv2.TrackerKCF_create()
         if name == "GOTURN":
             return cv2.TrackerGOTURN_create()
-        return cv2.TrackerCSRT_create()
+        return cv2.TrackerKCF_create()  # Default to KCF (more stable)
 
     def initialize(self, frame: np.ndarray, roi: Optional[Tuple[int, int, int, int]]) -> None:
         import cv2

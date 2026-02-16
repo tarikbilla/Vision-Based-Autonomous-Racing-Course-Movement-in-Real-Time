@@ -29,7 +29,22 @@ class CameraCapture:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         cap.set(cv2.CAP_PROP_FPS, self.fps)
         if not cap.isOpened():
-            raise RuntimeError("Camera capture failed to open")
+            # Try to find an open camera
+            print(f"[!] Camera source {self.source} failed. Searching for available cameras...")
+            for i in range(10):
+                test_cap = cv2.VideoCapture(i)
+                if test_cap.isOpened():
+                    print(f"[✓] Found camera at index {i}")
+                    test_cap.release()
+                    cap = cv2.VideoCapture(i)
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+                    cap.set(cv2.CAP_PROP_FPS, self.fps)
+                    self.source = i
+                    break
+                test_cap.release()
+            if not cap.isOpened():
+                raise RuntimeError(f"Camera capture failed to open (tried indices 0-9)")
         self._cap = cap
 
     def close(self) -> None:

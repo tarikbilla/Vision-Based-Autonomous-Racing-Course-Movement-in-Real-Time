@@ -19,7 +19,8 @@ def _build_ble_client(config, simulate: bool, device_hint: str | None):
     )
     if simulate:
         return FakeBLEClient(target)
-    return SimplePyBLEClient(target, device_name_or_mac=device_hint)
+    scan_timeout_ms = max(10000, int(config.ble.connection_timeout_s * 1000))
+    return SimplePyBLEClient(target, device_name_or_mac=device_hint, scan_timeout_ms=scan_timeout_ms)
 
 
 def run_app(args: argparse.Namespace) -> int:
