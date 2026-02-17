@@ -49,6 +49,7 @@ class ControlOrchestrator:
         self._last_center: Optional[tuple[int, int]] = None
         self._latest_frame: Optional[np.ndarray] = None
         self._latest_frame_lock = threading.Lock()
+        self._road_mask: Optional[np.ndarray] = None  # Cache road mask for car detection
 
     def start(self) -> None:
         self.stop_event.clear()
@@ -91,6 +92,7 @@ class ControlOrchestrator:
         frame_count = 0
         last_processed = 0.0
         analysis_interval = 0.15  # ~6-7 FPS analysis rate
+        self._road_mask = None  # Cache road mask
         while not self.stop_event.is_set():
             if not self.tracker_ready.is_set():
                 time.sleep(0.05)
@@ -104,11 +106,17 @@ class ControlOrchestrator:
                 continue
             last_processed = now
             image = frame.image
+            
+            # Get road mask for constrained car detection
+            _, _, _, road_mask = self.boundary.detect_road_edges(image)
+            self._road_mask = road_mask
+            
             try:
                 tracked = self.tracker.update(image)
             except Exception as exc:
                 if self.color_tracking_enabled:
-                    detected = self._detect_red_car(image)
+                    # Detect car constrained to road region
+                    detected = self._detect_red_car(image, self._road_mask)
                     if detected is None:
                         print(f"[!] Tracking error: {exc}")
                         self.latest_control = ControlVector(light_on=True, speed=0, right_turn_value=0, left_turn_value=0)
@@ -149,15 +157,22 @@ class ControlOrchestrator:
         # Draw road edges and centerline on live view if auto-tracking
         live_view = image.copy()
         if self.color_tracking_enabled:
-            left_edge, road_center, right_edge = self.boundary.detect_road_edges(image)
+            left_edge, road_center, right_edge, road_mask = self.boundary.detect_road_edges(image)
             if left_edge is not None and right_edge is not None:
                 height = image.shape[0]
-                # Draw road edges
-                cv2.line(live_view, (left_edge, 0), (left_edge, height), (0, 255, 0), 2)  # Green left edge
-                cv2.line(live_view, (right_edge, 0), (right_edge, height), (0, 255, 0), 2)  # Green right edge
+                # Draw road region (semi-transparent overlay)
+                if road_mask is not None:
+                    overlay = live_view.copy()
+                    overlay[road_mask > 0] = (100, 200, 100)  # Green tint for road area
+                    cv2.addWeighted(overlay, 0.2, live_view, 0.8, 0, live_view)
+                
+                # Draw road edges with thicker lines
+                cv2.line(live_view, (left_edge, 0), (left_edge, height), (0, 255, 0), 3)  # Green left edge
+                cv2.line(live_view, (right_edge, 0), (right_edge, height), (0, 255, 0), 3)  # Green right edge
                 # Draw centerline
-                cv2.line(live_view, (road_center, 0), (road_center, height), (255, 0, 0), 2)  # Blue centerline
-                cv2.putText(live_view, f"Road Center: {road_center}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+                cv2.line(live_view, (road_center, 0), (road_center, height), (255, 0, 0), 3)  # Blue centerline
+                cv2.putText(live_view, f"Road: L={left_edge} C={road_center} R={right_edge}", 
+                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
         
         live_view = draw_overlay(live_view, None, None, None, self.latest_heading, draw_tracking=False)
         cv2.imshow("Camera Live", live_view)
@@ -167,26 +182,39 @@ class ControlOrchestrator:
         if cv2.waitKey(1) & 0xFF == ord("q"):
             self.stop_event.set()
 
-    def _detect_red_car(self, image: np.ndarray) -> Optional[TrackedObject]:
+    def _detect_red_car(self, image: np.ndarray, road_region: Optional[np.ndarray] = None) -> Optional[TrackedObject]:
+        """Detect red car, optionally constrained to road_region."""
         import cv2
 
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        mask1 = cv2.inRange(hsv, (0, 120, 50), (10, 255, 255))
-        mask2 = cv2.inRange(hsv, (170, 120, 50), (180, 255, 255))
+        
+        # Detect red (not pure red - car is darker red)
+        mask1 = cv2.inRange(hsv, (0, 100, 40), (12, 255, 255))
+        mask2 = cv2.inRange(hsv, (168, 100, 40), (180, 255, 255))
         mask = cv2.bitwise_or(mask1, mask2)
+        
+        # Clean up
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
         mask = cv2.morphologyEx(mask, cv2.MORPH_DILATE, kernel, iterations=1)
+        
+        # Constrain to road region if provided
+        if road_region is not None:
+            mask = cv2.bitwise_and(mask, road_region)
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return None
-        largest = max(contours, key=cv2.contourArea)
-        area = cv2.contourArea(largest)
-        if area < 40:
+        
+        # Find contour with area between 40 and 5000 (car-sized, not noise or edges)
+        valid_contours = [c for c in contours if 40 < cv2.contourArea(c) < 5000]
+        if not valid_contours:
             return None
+        
+        largest = max(valid_contours, key=cv2.contourArea)
         x, y, w, h = cv2.boundingRect(largest)
         center = (x + w // 2, y + h // 2)
+        
         if self._last_center is None:
             movement = (0, 0)
         else:

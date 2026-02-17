@@ -55,38 +55,74 @@ class BoundaryDetector:
                 return dist
         return self.ray_max_length
 
-    def detect_road_edges(self, frame: np.ndarray) -> Tuple[Optional[int], Optional[int], Optional[int]]:
-        """Detect road edges (red/white markers) and return left edge x, center x, right edge x."""
+    def detect_road_edges(self, frame: np.ndarray) -> Tuple[Optional[int], Optional[int], Optional[int], Optional[np.ndarray]]:
+        """
+        Detect road edges (red/white markers) for curved roads.
+        Returns: (left_edge_x, center_x, right_edge_x, road_mask)
+        road_mask is a binary mask showing the detected road region.
+        """
         if frame.ndim != 3:
-            return None, None, None
+            return None, None, None, None
         
         import cv2
         
         height, width = frame.shape[:2]
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         
-        # Detect red and white markers
-        red_mask1 = cv2.inRange(hsv, (0, 100, 50), (10, 255, 255))
-        red_mask2 = cv2.inRange(hsv, (170, 100, 50), (180, 255, 255))
+        # Detect RED and WHITE markers (road boundaries)
+        # Red has two ranges in HSV
+        red_mask1 = cv2.inRange(hsv, (0, 80, 60), (15, 255, 255))      # Lower reds
+        red_mask2 = cv2.inRange(hsv, (165, 80, 60), (180, 255, 255))   # Upper reds
         red_mask = cv2.bitwise_or(red_mask1, red_mask2)
-        white_mask = cv2.inRange(hsv, (0, 0, 180), (180, 30, 255))
         
+        # White: high V, low S
+        white_mask = cv2.inRange(hsv, (0, 0, 150), (180, 50, 255))
+        
+        # Combine edge markers
         edge_mask = cv2.bitwise_or(red_mask, white_mask)
         
-        # Look at lower half of frame for road edges
-        band_start = int(height * 0.5)
-        band = edge_mask[band_start:, :]
+        # Morphological operations to clean up
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        edge_mask = cv2.morphologyEx(edge_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        edge_mask = cv2.morphologyEx(edge_mask, cv2.MORPH_OPEN, kernel, iterations=1)
         
-        # Find left and right edges
-        edge_xs = np.where(np.any(band > 0, axis=0))[0]
-        if len(edge_xs) < 2:
-            return None, None, None
+        # Find contours to identify road boundaries
+        contours, _ = cv2.findContours(edge_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-        left_edge = int(np.percentile(edge_xs, 10))
-        right_edge = int(np.percentile(edge_xs, 90))
-        center_x = (left_edge + right_edge) // 2
+        if len(contours) < 2:
+            return None, None, None, None
         
-        return left_edge, center_x, right_edge
+        # Find leftmost and rightmost contour centers
+        left_most_x = width
+        right_most_x = 0
+        road_x_positions = []
+        
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < 50:  # Ignore tiny noise
+                continue
+            
+            M = cv2.moments(contour)
+            if M["m00"] > 0:
+                cx = int(M["m10"] / M["m00"])
+                road_x_positions.append(cx)
+                left_most_x = min(left_most_x, cx)
+                right_most_x = max(right_most_x, cx)
+        
+        if len(road_x_positions) < 2:
+            return None, None, None, None
+        
+        # Create a binary mask of the detected road area
+        # This marks all pixels between the detected edges
+        road_mask = np.zeros((height, width), dtype=np.uint8)
+        
+        # Fill region between detected edges as "road area"
+        if left_most_x < right_most_x:
+            road_mask[:, left_most_x:right_most_x] = 255
+        
+        center_x = (left_most_x + right_most_x) // 2
+        
+        return left_most_x, center_x, right_most_x, road_mask
 
     def analyze(self, frame: np.ndarray, center: Tuple[int, int], movement: Tuple[int, int]) -> Tuple[List[RayResult], ControlVector]:
         gray = frame
@@ -103,9 +139,9 @@ class BoundaryDetector:
             import cv2
 
             # First try to detect road edges (red/white markers)
-            left_edge, road_center, right_edge = self.detect_road_edges(frame)
+            left_edge, road_center, right_edge, road_mask = self.detect_road_edges(frame)
             
-            if left_edge is not None and right_edge is not None:
+            if left_edge is not None and right_edge is not None and road_mask is not None:
                 # Road edges detected: use them for guidance
                 error = center[0] - road_center
                 tolerance = 20

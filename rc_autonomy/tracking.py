@@ -65,14 +65,27 @@ class OpenCVTracker(Tracker):
         if w <= 0 or h <= 0:
             raise RuntimeError("Invalid ROI selection")
 
-        if frame.ndim == 2:
-            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-        if frame.dtype != np.uint8:
-            frame = np.clip(frame, 0, 255).astype(np.uint8)
+        # Ensure frame is in BGR format and uint8
+        work_frame = frame.copy()
+        if work_frame.ndim == 2:
+            # Grayscale: convert to BGR
+            work_frame = cv2.cvtColor(work_frame, cv2.COLOR_GRAY2BGR)
+        if work_frame.dtype != np.uint8:
+            # Convert to uint8
+            work_frame = np.clip(work_frame, 0, 255).astype(np.uint8)
+        
+        # Verify frame is valid
+        if work_frame.shape[2] != 3:
+            raise RuntimeError(f"Invalid frame shape: expected 3 channels, got {work_frame.shape[2]}")
+        
+        # Verify ROI is within frame bounds
+        if x + w > work_frame.shape[1] or y + h > work_frame.shape[0]:
+            raise RuntimeError(f"ROI out of bounds: ROI=({x},{y},{w},{h}), frame={work_frame.shape}")
+        
         self.tracker = self._create_tracker()
-        ok = self.tracker.init(frame, (x, y, w, h))
+        ok = self.tracker.init(work_frame, (x, y, w, h))
         if not ok:
-            raise RuntimeError("Tracker initialization failed")
+            raise RuntimeError("Tracker initialization failed - tracker.init() returned False")
         self._last_center = (x + w // 2, y + h // 2)
 
     def update(self, frame: np.ndarray) -> TrackedObject:
