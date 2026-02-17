@@ -31,13 +31,29 @@ class OpenCVTracker(Tracker):
         import cv2
 
         name = self.tracker_type.upper()
+        legacy = getattr(cv2, "legacy", None)
+
+        def create_tracker(api_name: str):
+            if hasattr(cv2, api_name):
+                return getattr(cv2, api_name)()
+            if legacy is not None and hasattr(legacy, api_name):
+                return getattr(legacy, api_name)()
+            return None
+
         if name == "CSRT":
-            return cv2.TrackerCSRT_create()
-        if name == "KCF":
-            return cv2.TrackerKCF_create()
-        if name == "GOTURN":
-            return cv2.TrackerGOTURN_create()
-        return cv2.TrackerKCF_create()  # Default to KCF (more stable)
+            tracker = create_tracker("TrackerCSRT_create")
+        elif name == "KCF":
+            tracker = create_tracker("TrackerKCF_create")
+        elif name == "GOTURN":
+            tracker = create_tracker("TrackerGOTURN_create")
+        else:
+            tracker = create_tracker("TrackerKCF_create")
+
+        if tracker is None:
+            raise RuntimeError(
+                "OpenCV tracker API not available. Install opencv-contrib-python or switch tracker_type."
+            )
+        return tracker
 
     def initialize(self, frame: np.ndarray, roi: Optional[Tuple[int, int, int, int]]) -> None:
         import cv2
@@ -45,11 +61,18 @@ class OpenCVTracker(Tracker):
         if roi is None:
             roi = cv2.selectROI("Select ROI", frame, fromCenter=False, showCrosshair=True)
             cv2.destroyWindow("Select ROI")
+        x, y, w, h = [int(v) for v in roi]
+        if w <= 0 or h <= 0:
+            raise RuntimeError("Invalid ROI selection")
+
+        if frame.ndim == 2:
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+        if frame.dtype != np.uint8:
+            frame = np.clip(frame, 0, 255).astype(np.uint8)
         self.tracker = self._create_tracker()
-        ok = self.tracker.init(frame, roi)
+        ok = self.tracker.init(frame, (x, y, w, h))
         if not ok:
             raise RuntimeError("Tracker initialization failed")
-        x, y, w, h = [int(v) for v in roi]
         self._last_center = (x + w // 2, y + h // 2)
 
     def update(self, frame: np.ndarray) -> TrackedObject:

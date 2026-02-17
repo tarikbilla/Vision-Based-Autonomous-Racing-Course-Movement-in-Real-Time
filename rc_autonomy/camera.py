@@ -20,11 +20,16 @@ class CameraCapture:
         self.height = height
         self.fps = fps
         self._cap = None
+        self._backend = None
 
     def open(self) -> None:
         import cv2
 
-        cap = cv2.VideoCapture(self.source)
+        self.close()
+        backend = None
+        if isinstance(self.source, int):
+            backend = cv2.CAP_AVFOUNDATION
+        cap = cv2.VideoCapture(self.source, backend) if backend else cv2.VideoCapture(self.source)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         cap.set(cv2.CAP_PROP_FPS, self.fps)
@@ -32,11 +37,11 @@ class CameraCapture:
             # Try to find an open camera
             print(f"[!] Camera source {self.source} failed. Searching for available cameras...")
             for i in range(10):
-                test_cap = cv2.VideoCapture(i)
+                test_cap = cv2.VideoCapture(i, cv2.CAP_AVFOUNDATION)
                 if test_cap.isOpened():
                     print(f"[✓] Found camera at index {i}")
                     test_cap.release()
-                    cap = cv2.VideoCapture(i)
+                    cap = cv2.VideoCapture(i, cv2.CAP_AVFOUNDATION)
                     cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
                     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
                     cap.set(cv2.CAP_PROP_FPS, self.fps)
@@ -45,6 +50,9 @@ class CameraCapture:
                 test_cap.release()
             if not cap.isOpened():
                 raise RuntimeError(f"Camera capture failed to open (tried indices 0-9)")
+        # Warm up the camera
+        for _ in range(3):
+            cap.read()
         self._cap = cap
 
     def close(self) -> None:
@@ -55,10 +63,17 @@ class CameraCapture:
     def frames(self) -> Iterator[Frame]:
         if not self._cap:
             self.open()
+        retries = 0
         while True:
             ok, frame = self._cap.read()
             if not ok:
+                retries += 1
+                if retries <= 3:
+                    time.sleep(0.2)
+                    self.open()
+                    continue
                 raise RuntimeError("Camera capture failed")
+            retries = 0
             yield Frame(image=frame, timestamp=time.time())
 
 

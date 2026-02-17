@@ -1,7 +1,7 @@
 # PRD — Vision-Based Autonomous RC Car Control System
 
 ## 1) Summary
-Build a **vision-based autonomous control system** for a small RC car on a racetrack. The system runs on **Raspberry Pi 4**, captures video from a **Sony Alpha 73 4K camera**, processes frames in **C++** to track the car in real time, derives motion/heading, performs track-boundary guidance, and transmits steering + speed + lights commands to the car over **Bluetooth Low Energy (BLE)**. 
+Build a **vision-based autonomous control system** for a small RC car on a racetrack. The system runs on **Raspberry Pi 4**, captures video from a **Sony Alpha 73 4K camera**, processes frames in **python** to track the car in real time, derives motion/heading, performs track-boundary guidance, and transmits steering + speed + lights commands to the car over **Bluetooth Low Energy (BLE)**. 
 
 The `old_project/` folder contains a Python prototype (read-only reference) that demonstrates the core concepts: GOTURN tracking, ray-based boundary detection, and BLE command transmission.
 
@@ -15,11 +15,11 @@ Autonomously driving a small RC car on a marked track requires:
 - **Efficient resource usage** on Raspberry Pi 4 (limited CPU/RAM)
 
 ### Goals
-- **End-to-end autonomous pipeline**: Sony Alpha 73 → Raspberry Pi 4 → C++ processing → BLE commands → car motion
+- **End-to-end autonomous pipeline**: Sony Alpha 73 → Raspberry Pi 4 → python processing → BLE commands → car motion
 - **Real-time operation**: maintain stable tracking and responsive steering decisions at acceptable frame rates
-- **Modular C++ architecture**: separable tracking, guidance, and BLE command layers
+- **Modular python architecture**: separable tracking, guidance, and BLE command layers
 - **Robustness**: tolerate track variations, lighting changes, and brief tracking degradation
-- **Performance optimization**: leverage C++ for efficient processing of 4K frames on Raspberry Pi 4
+- **Performance optimization**: leverage python for efficient processing of 4K frames on Raspberry Pi 4
 
 ### Non-goals (current scope)
 - Full SLAM / global path planning
@@ -27,11 +27,11 @@ Autonomously driving a small RC car on a marked track requires:
 - Obstacle avoidance beyond boundary/track avoidance (future improvement)
 - Full neural network training on-device (inference only)
 
-## 3) Technology Choice: C++ vs Python
+## 3) Technology Choice: python vs Python
 
-### Recommendation: **C++** for Production Implementation
+### Recommendation: **python** for Production Implementation
 
-#### C++ Advantages (Critical for this project):
+#### python Advantages (Critical for this project):
 1. **Performance**: 
    - Native compilation → faster execution, lower CPU usage
    - Better memory management → critical for 4K frame processing on Raspberry Pi 4
@@ -50,7 +50,7 @@ Autonomously driving a small RC car on a marked track requires:
 
 4. **Production Readiness**:
    - Industry standard for embedded vision systems
-   - Better integration with OpenCV C++ API (more features, better performance)
+   - Better integration with OpenCV python API (more features, better performance)
    - Easier deployment (single binary, no Python runtime dependencies)
 
 #### Python Advantages (Why it was used in prototype):
@@ -59,12 +59,12 @@ Autonomously driving a small RC car on a marked track requires:
 3. **Flexibility**: Easy to modify and experiment with algorithms
 
 #### Conclusion:
-For **Raspberry Pi 4 + 4K camera + real-time control**, **C++ is the better choice** due to performance, resource efficiency, and real-time requirements. The Python prototype in `old_project/` serves as a reference for algorithm logic and system architecture.
+For **Raspberry Pi 4 + 4K camera + real-time control**, **python is the better choice** due to performance, resource efficiency, and real-time requirements. The Python prototype in `old_project/` serves as a reference for algorithm logic and system architecture.
 
 ## 4) Users & Use Cases
 
 ### Primary Users
-- **Developer/Researcher**: develops and tunes the C++ pipeline, evaluates autonomy on different tracks
+- **Developer/Researcher**: develops and tunes the python pipeline, evaluates autonomy on different tracks
 - **Operator**: starts/stops the system, selects the tracked object (ROI), monitors system status
 
 ### Core Use Cases
@@ -79,16 +79,16 @@ For **Raspberry Pi 4 + 4K camera + real-time control**, **C++ is the better choi
   - Captures high-resolution video (3840x2160 or downscaled)
   - Connected to Raspberry Pi 4 via USB/HDMI capture card or network streaming
 - **Raspberry Pi 4**: 
-  - Processes video frames in C++
+  - Processes video frames in python
   - Runs tracking, boundary detection, and control logic
   - Manages BLE communication with RC car
 - **RC Car**: BLE-controlled DR!FT car (MAC address configurable)
 
-### Software Architecture (C++ Implementation)
+### Software Architecture (python Implementation)
 
 #### Component 1: Camera Capture Module
 - **Input**: Sony Alpha 73 4K camera stream
-- **Technology**: OpenCV C++ (`VideoCapture` or GStreamer pipeline)
+- **Technology**: OpenCV python (`VideoCapture` or GStreamer pipeline)
 - **Output**: Raw frames (may need downscaling for processing efficiency)
 - **Responsibilities**:
   - Initialize camera connection
@@ -98,7 +98,7 @@ For **Raspberry Pi 4 + 4K camera + real-time control**, **C++ is the better choi
 
 #### Component 2: Object Tracking Module
 - **Input**: Camera frames + initial ROI selection
-- **Technology**: OpenCV C++ tracking API (GOTURN, CSRT, or KCF)
+- **Technology**: OpenCV python tracking API (GOTURN, CSRT, or KCF)
 - **Output**: `(position, movement_vector)` tuples
 - **Responsibilities**:
   - Initialize tracker with user-selected ROI
@@ -108,7 +108,7 @@ For **Raspberry Pi 4 + 4K camera + real-time control**, **C++ is the better choi
 
 #### Component 3: Boundary Detection & Guidance Module
 - **Input**: Camera frames + tracked car position + movement vector
-- **Technology**: OpenCV C++ image processing
+- **Technology**: OpenCV python image processing
 - **Output**: Control vector `[light_on, speed, right_turn_value, left_turn_value]`
 - **Responsibilities**:
   - Convert frames to grayscale
@@ -119,7 +119,7 @@ For **Raspberry Pi 4 + 4K camera + real-time control**, **C++ is the better choi
 
 #### Component 4: BLE Communication Module
 - **Input**: Control vector from guidance module
-- **Technology**: BlueZ (Linux BLE stack) or C++ BLE library (e.g., `simpleble-cpp`)
+- **Technology**: BlueZ (Linux BLE stack) or python BLE library (e.g., `simpleble-python`)
 - **Output**: BLE commands sent to RC car
 - **Responsibilities**:
   - Scan and connect to RC car by MAC address
@@ -129,7 +129,7 @@ For **Raspberry Pi 4 + 4K camera + real-time control**, **C++ is the better choi
   - Handle connection errors and reconnection
 
 #### Component 5: Control Orchestrator
-- **Technology**: C++ multithreading (`std::thread`, `std::mutex`, `std::queue`)
+- **Technology**: python multithreading (`std::thread`, `std::mutex`, `std::queue`)
 - **Responsibilities**:
   - Coordinate camera capture, tracking, guidance, and BLE threads
   - Manage frame queues between modules
@@ -137,14 +137,14 @@ For **Raspberry Pi 4 + 4K camera + real-time control**, **C++ is the better choi
   - Emergency stop mechanism
 
 #### Component 6: UI/Monitoring (Optional)
-- **Technology**: OpenCV GUI (`cv::imshow`) or lightweight C++ GUI framework
+- **Technology**: OpenCV GUI (`cv::imshow`) or lightweight python GUI framework
 - **Responsibilities**:
   - Display tracking overlay (bounding box, rays, control values)
   - ROI selection interface
   - System status indicators
   - Start/stop controls
 
-### Data Flow (C++ Implementation)
+### Data Flow (python Implementation)
 1. **Camera thread**: Captures frames from Sony Alpha 73 → pushes to frame queue
 2. **Tracking thread**: Consumes frames → tracks car → outputs `(position, movement_vector)` → pushes to position queue
 3. **Guidance thread**: Consumes frames + positions → runs boundary detection → outputs control vector → pushes to control queue
@@ -269,7 +269,7 @@ For **Raspberry Pi 4 + 4K camera + real-time control**, **C++ is the better choi
 - Validate control values before sending (prevent out-of-range commands)
 
 ### NFR5 — Maintainability
-- Modular C++ architecture with clear separation:
+- Modular python architecture with clear separation:
   - Camera capture module
   - Tracking module
   - Guidance/boundary detection module
@@ -298,17 +298,17 @@ For **Raspberry Pi 4 + 4K camera + real-time control**, **C++ is the better choi
   - MAC address: configurable (e.g., 'f9:af:3c:e2:d2:f5')
   - BLE characteristic UUID: '6e400002-b5a3-f393-e0a9-e50e24dcca9e'
 
-### Software / Libraries (C++ Implementation)
-- **C++ Compiler**: GCC 8+ or Clang (C++17 standard)
-- **OpenCV**: 4.x (C++ API)
+### Software / Libraries (python Implementation)
+- **python Compiler**: GCC 8+ or Clang (python17 standard)
+- **OpenCV**: 4.x (python API)
   - Built with tracking module support (GOTURN, CSRT, KCF)
   - Built with GUI support (`highgui` module)
 - **BLE Library**: 
   - Option 1: BlueZ (Linux native BLE stack) via D-Bus or direct API
-  - Option 2: `simpleble-cpp` (cross-platform C++ wrapper)
+  - Option 2: `simpleble-python` (cross-platform python wrapper)
   - Option 3: Custom BlueZ integration using `bluetoothctl` or `gatttool`
 - **Build System**: CMake 3.10+
-- **Threading**: C++ standard library (`std::thread`, `std::mutex`, `std::queue`)
+- **Threading**: python standard library (`std::thread`, `std::mutex`, `std::queue`)
 - **Optional**: 
   - GStreamer (for advanced camera pipeline)
   - Eigen3 (for matrix operations if needed)
@@ -354,7 +354,7 @@ For **Raspberry Pi 4 + 4K camera + real-time control**, **C++ is the better choi
 
 ### Phase 1: Foundation (Week 1-2)
 - Set up Raspberry Pi 4 development environment
-- Install dependencies (OpenCV C++, BLE library)
+- Install dependencies (OpenCV python, BLE library)
 - Create CMake build system
 - Implement camera capture module (Sony Alpha 73 connection)
 - Test frame capture and display
@@ -451,7 +451,7 @@ For **Raspberry Pi 4 + 4K camera + real-time control**, **C++ is the better choi
      - Profile and optimize hot paths
 
 2. **BLE Library Compatibility**
-   - **Risk**: C++ BLE library may not match Python prototype's behavior
+   - **Risk**: python BLE library may not match Python prototype's behavior
    - **Mitigation**: 
      - Test BLE command format matches Python prototype exactly
      - Use BlueZ directly if wrapper libraries have issues
@@ -497,4 +497,4 @@ The `old_project/` folder contains a working Python prototype that demonstrates:
 - Main control loop (`old_project/Python/main.py`)
 - Simulation environment (`old_project/Simulation/simulation.py`)
 
-**Note**: The `old_project/` folder is **read-only** and serves as a reference for algorithm logic, BLE command format, and system architecture. The C++ implementation should replicate this functionality with performance optimizations for Raspberry Pi 4.
+**Note**: The `old_project/` folder is **read-only** and serves as a reference for algorithm logic, BLE command format, and system architecture. The python implementation should replicate this functionality with performance optimizations for Raspberry Pi 4.

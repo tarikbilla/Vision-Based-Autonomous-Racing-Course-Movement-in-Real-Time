@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import numpy as np
 
@@ -55,15 +55,129 @@ class BoundaryDetector:
                 return dist
         return self.ray_max_length
 
+    def detect_road_edges(self, frame: np.ndarray) -> Tuple[Optional[int], Optional[int], Optional[int]]:
+        """Detect road edges (red/white markers) and return left edge x, center x, right edge x."""
+        if frame.ndim != 3:
+            return None, None, None
+        
+        import cv2
+        
+        height, width = frame.shape[:2]
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        
+        # Detect red and white markers
+        red_mask1 = cv2.inRange(hsv, (0, 100, 50), (10, 255, 255))
+        red_mask2 = cv2.inRange(hsv, (170, 100, 50), (180, 255, 255))
+        red_mask = cv2.bitwise_or(red_mask1, red_mask2)
+        white_mask = cv2.inRange(hsv, (0, 0, 180), (180, 30, 255))
+        
+        edge_mask = cv2.bitwise_or(red_mask, white_mask)
+        
+        # Look at lower half of frame for road edges
+        band_start = int(height * 0.5)
+        band = edge_mask[band_start:, :]
+        
+        # Find left and right edges
+        edge_xs = np.where(np.any(band > 0, axis=0))[0]
+        if len(edge_xs) < 2:
+            return None, None, None
+        
+        left_edge = int(np.percentile(edge_xs, 10))
+        right_edge = int(np.percentile(edge_xs, 90))
+        center_x = (left_edge + right_edge) // 2
+        
+        return left_edge, center_x, right_edge
+
     def analyze(self, frame: np.ndarray, center: Tuple[int, int], movement: Tuple[int, int]) -> Tuple[List[RayResult], ControlVector]:
         gray = frame
         if frame.ndim == 3:
             gray = np.dot(frame[..., :3], [0.114, 0.587, 0.299]).astype(np.uint8)
+        height, width = gray.shape
         heading = self._heading_from_movement(movement)
         rays = []
         for angle in self.ray_angles_deg:
             distance = self._cast_ray(gray, center, heading + angle)
             rays.append(RayResult(angle_deg=angle, distance=distance))
+
+        if frame.ndim == 3:
+            import cv2
+
+            # First try to detect road edges (red/white markers)
+            left_edge, road_center, right_edge = self.detect_road_edges(frame)
+            
+            if left_edge is not None and right_edge is not None:
+                # Road edges detected: use them for guidance
+                error = center[0] - road_center
+                tolerance = 20
+                
+                steer_mag = int(
+                    min(
+                        self.steering_limit,
+                        abs(error) / max(1, (right_edge - left_edge) / 2) * self.steering_limit,
+                    )
+                )
+                left_turn = 0
+                right_turn = 0
+                if error < -tolerance:
+                    right_turn = max(1, steer_mag)
+                elif error > tolerance:
+                    left_turn = max(1, steer_mag)
+
+                speed = self.default_speed
+                if abs(error) > (right_edge - left_edge) * 0.3:
+                    speed = max(5, self.default_speed - 10)
+
+                control = ControlVector(
+                    light_on=self.light_on,
+                    speed=clamp(speed, 0, 255),
+                    right_turn_value=clamp(right_turn, 0, 255),
+                    left_turn_value=clamp(left_turn, 0, 255),
+                )
+                return rays, control
+            
+            # Fallback: try red/white lane detection
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            red_mask1 = cv2.inRange(hsv, (0, 120, 50), (10, 255, 255))
+            red_mask2 = cv2.inRange(hsv, (170, 120, 50), (180, 255, 255))
+            red_mask = cv2.bitwise_or(red_mask1, red_mask2)
+            white_mask = cv2.inRange(hsv, (0, 0, 200), (180, 40, 255))
+
+            band_y = int(height * 0.6)
+            band = slice(max(0, band_y - 5), min(height, band_y + 5))
+            red_xs = np.where(red_mask[band, :] > 0)[1]
+            white_xs = np.where(white_mask[band, :] > 0)[1]
+
+            if red_xs.size > 0 and white_xs.size > 0:
+                red_x = int(np.mean(red_xs))
+                white_x = int(np.mean(white_xs))
+                lane_center_x = int((red_x + white_x) / 2)
+                error = center[0] - lane_center_x
+                tolerance = 15
+
+                steer_mag = int(
+                    min(
+                        self.steering_limit,
+                        abs(error) / max(1, width / 2) * self.steering_limit * 1.5,
+                    )
+                )
+                left_turn = 0
+                right_turn = 0
+                if error < -tolerance:
+                    right_turn = max(1, steer_mag)
+                elif error > tolerance:
+                    left_turn = max(1, steer_mag)
+
+                speed = self.default_speed
+                if abs(error) > width * 0.25:
+                    speed = max(5, self.default_speed - 10)
+
+                control = ControlVector(
+                    light_on=self.light_on,
+                    speed=clamp(speed, 0, 255),
+                    right_turn_value=clamp(right_turn, 0, 255),
+                    left_turn_value=clamp(left_turn, 0, 255),
+                )
+                return rays, control
         
         min_distance = min(r.distance for r in rays)
         left_distance = rays[0].distance

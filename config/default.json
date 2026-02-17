@@ -3,18 +3,19 @@
     "source": 0,
     "width": 640,
     "height": 480,
-    "fps": 15
+    "fps": 10
   },
   "tracking": {
     "tracker_type": "KCF",
-    "roi": null
+    "roi": null,
+    "color_tracking": true
   },
   "guidance": {
     "black_threshold": 50,
     "ray_angles_deg": [-60, 0, 60],
     "ray_max_length": 200,
     "evasive_distance": 80,
-    "default_speed": 20
+    "default_speed": 10
   },
   "ble": {
     "device_mac": "f9:af:3c:e2:d2:f5",

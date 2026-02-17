@@ -62,6 +62,17 @@ def main() -> int:
         try:
             ble.connect()
             print("[✓] BLE car connected!")
+            print("[*] Sending short START pulse to confirm connection...")
+            pulse_control = ControlVector(
+                light_on=True,
+                speed=max(5, config.guidance.default_speed),
+                right_turn_value=0,
+                left_turn_value=0,
+            )
+            ble.send_control(pulse_control)
+            time.sleep(1)
+            ble.send_control(stop_control)
+            print("[✓] Connection pulse complete.")
             break
         except Exception as exc:
             if attempt == config.ble.reconnect_attempts:

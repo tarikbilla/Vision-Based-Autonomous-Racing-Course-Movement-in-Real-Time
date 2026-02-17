@@ -18,6 +18,7 @@ class CameraConfig:
 class TrackingConfig:
     tracker_type: str
     roi: Optional[list[int]]
+    color_tracking: bool = False
 
 
 @dataclass
