@@ -34,6 +34,8 @@ class BoundaryDetector:
         self.steering_limit = steering_limit
         self.light_on = light_on
         self._last_heading = 0.0
+        # For improved car detection
+        self.last_car_position = None
 
     def _heading_from_movement(self, movement: Tuple[int, int]) -> float:
         dx, dy = movement
@@ -140,6 +142,148 @@ class BoundaryDetector:
         return None, None, None, None
         
         return None, None, None, None
+
+    def detect_car_in_frame(self, frame: np.ndarray, road_mask: Optional[np.ndarray] = None) -> Optional[Tuple[int, int, int, int]]:
+        """
+        Detect RC car in frame using intelligent filtering.
+        Distinguishes between road markers and car using 5 criteria.
+        
+        Args:
+            frame: Input image (BGR)
+            road_mask: Binary mask of road area (optional, for constraining search)
+        
+        Returns:
+            Bounding box (x, y, width, height) or None
+        """
+        if frame.ndim != 3 or frame.shape[2] != 3:
+            return None
+        
+        import cv2
+        
+        height, width = frame.shape[:2]
+        
+        # Convert to grayscale
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        
+        # Adaptive threshold
+        binary = cv2.adaptiveThreshold(
+            blurred, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            11, 2
+        )
+        
+        # Minimal morphology
+        kernel = np.ones((2, 2), np.uint8)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+        
+        # Find contours
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if len(contours) == 0:
+            return None
+        
+        # Filter by area
+        contours_with_area = [(cv2.contourArea(c), c) for c in contours]
+        contours_sorted = sorted(contours_with_area, key=lambda x: x[0], reverse=True)
+        large_contours = [(area, c) for area, c in contours_sorted if area >= 700]
+        
+        if len(large_contours) < 2:
+            return None
+        
+        # Skip first 2 (outer/inner boundaries) and check remaining
+        other_contours = large_contours[2:] if len(large_contours) > 2 else []
+        if len(other_contours) == 0:
+            return None
+        
+        # Get road edges if we have road_mask
+        if road_mask is not None:
+            road_indices = np.where(road_mask > 0)
+            if len(road_indices[0]) > 0:
+                road_left = int(road_indices[1].min())
+                road_right = int(road_indices[1].max())
+            else:
+                road_left, road_right = 0, width
+        else:
+            road_left, road_right = 0, width
+        
+        # Intelligent car filtering
+        best_car = None
+        best_score = -1
+        
+        for area, contour in other_contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            cx, cy = x + w // 2, y + h // 2
+            
+            # 1. Spatial location filter
+            car_search_left = road_left + int((road_right - road_left) * 0.2)
+            car_search_right = road_right - int((road_right - road_left) * 0.2)
+            car_search_top = int(height * 0.4)
+            
+            if not (car_search_left < cx < car_search_right and car_search_top < cy < height):
+                continue
+            
+            # 2. Size constraints
+            min_size = 30
+            road_width = road_right - road_left if road_right > road_left else width
+            max_size = min(int(road_width * 0.4), int(height * 0.3))
+            
+            if w < min_size or h < min_size or w > max_size or h > max_size:
+                continue
+            
+            # 3. Aspect ratio
+            aspect = max(w, h) / max(1, min(w, h))
+            if aspect > 3:
+                continue
+            
+            # 4. Must be mostly in road area
+            if road_mask is not None and not self._is_mostly_in_road(road_mask, x, y, w, h):
+                continue
+            
+            # 5. Scoring: position, center alignment, temporal
+            position_score = 1.0 / (height - cy + 100)  # Prefer bottom
+            
+            road_center = (road_left + road_right) // 2
+            center_dist = abs(cx - road_center)
+            max_dist = (road_right - road_left) * 0.3
+            center_score = max(0, 1.0 - (center_dist / max_dist)) if max_dist > 0 else 0.5
+            
+            temporal_score = 1.0
+            if self.last_car_position:
+                last_x, last_y = self.last_car_position
+                dist_from_last = ((cx - last_x)**2 + (cy - last_y)**2)**0.5
+                if dist_from_last > 100:
+                    temporal_score = 0.3
+                else:
+                    temporal_score = 1.0 - (dist_from_last / 100)
+            
+            score = position_score * 0.4 + center_score * 0.4 + temporal_score * 0.2
+            
+            if score > best_score:
+                best_score = score
+                best_car = (x, y, w, h)
+        
+        if best_car:
+            x, y, w, h = best_car
+            self.last_car_position = (x + w // 2, y + h // 2)
+            return best_car
+        
+        return None
+    
+    def _is_mostly_in_road(self, road_mask: np.ndarray, x: int, y: int, w: int, h: int) -> bool:
+        """Check if bounding box is mostly within road area."""
+        y1, y2 = max(0, y), min(road_mask.shape[0], y + h)
+        x1, x2 = max(0, x), min(road_mask.shape[1], x + w)
+        
+        if y2 - y1 < 5 or x2 - x1 < 5:
+            return False
+        
+        region = road_mask[y1:y2, x1:x2]
+        total_pixels = (y2 - y1) * (x2 - x1)
+        road_pixels = np.count_nonzero(region)
+        
+        return road_pixels / total_pixels >= 0.4
 
     def analyze(self, frame: np.ndarray, center: Tuple[int, int], movement: Tuple[int, int]) -> Tuple[List[RayResult], ControlVector]:
         gray = frame

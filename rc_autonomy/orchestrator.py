@@ -93,6 +93,7 @@ class ControlOrchestrator:
         last_processed = 0.0
         analysis_interval = 0.15  # ~6-7 FPS analysis rate
         self._road_mask = None  # Cache road mask
+        
         while not self.stop_event.is_set():
             if not self.tracker_ready.is_set():
                 time.sleep(0.05)
@@ -115,13 +116,25 @@ class ControlOrchestrator:
                 tracked = self.tracker.update(image)
             except Exception as exc:
                 if self.color_tracking_enabled:
-                    # Detect car constrained to road region
-                    detected = self._detect_red_car(image, self._road_mask)
-                    if detected is None:
-                        print(f"[!] Tracking error: {exc}")
-                        self.latest_control = ControlVector(light_on=True, speed=0, right_turn_value=0, left_turn_value=0)
-                        continue
-                    tracked = detected
+                    # Try improved adaptive threshold car detection
+                    car_bbox = self.boundary.detect_car_in_frame(image, self._road_mask)
+                    if car_bbox:
+                        x, y, w, h = car_bbox
+                        center = (x + w // 2, y + h // 2)
+                        if self._last_center is None:
+                            movement = (0, 0)
+                        else:
+                            movement = (center[0] - self._last_center[0], center[1] - self._last_center[1])
+                        self._last_center = center
+                        tracked = TrackedObject(bbox=(x, y, w, h), center=center, movement=movement)
+                    else:
+                        # Fall back to red car detection
+                        detected = self._detect_red_car(image, self._road_mask)
+                        if detected is None:
+                            print(f"[!] Tracking error: {exc}")
+                            self.latest_control = ControlVector(light_on=True, speed=0, right_turn_value=0, left_turn_value=0)
+                            continue
+                        tracked = detected
                 else:
                     print(f"[!] Tracking error: {exc}")
                     self.latest_control = ControlVector(light_on=True, speed=0, right_turn_value=0, left_turn_value=0)
