@@ -3,7 +3,7 @@
     "source": 0,
     "width": 640,
     "height": 480,
-    "fps": 5
+    "fps": 30
   },
   "tracking": {
     "tracker_type": "KCF",
@@ -15,7 +15,7 @@
     "ray_angles_deg": [-60, 0, 60],
     "ray_max_length": 200,
     "evasive_distance": 80,
-    "default_speed": 5
+    "default_speed": 10
   },
   "ble": {
     "device_mac": "f9:af:3c:e2:d2:f5",

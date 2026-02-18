@@ -56,26 +56,27 @@ def test_road_edge_detection():
             light_on=config.control.light_on,
         )
         
-        # Test 1: Synthetic image with clear road edges
+        # Test 1: Synthetic image with clear white road edges
         test_img = np.ones((480, 640, 3), dtype=np.uint8) * 64  # Gray road
-        test_img[200:400, 50:100] = [0, 0, 255]  # Red left edge
+        test_img[200:400, 50:100] = [255, 255, 255]  # White left edge
         test_img[200:400, 540:590] = [255, 255, 255]  # White right edge
         
-        left, center, right = detector.detect_road_edges(test_img)
+        left, center, right, road_mask = detector.detect_road_edges(test_img)
         assert left is not None and right is not None, "Should detect edges"
         assert left < center < right, "Edge positions should be ordered"
+        assert road_mask is not None, "Should return road mask"
         print(f"  ✓ Test 1: Detected edges L={left}, C={center}, R={right}")
         
         # Test 2: Image without clear edges
         test_img2 = np.ones((480, 640, 3), dtype=np.uint8) * 64  # Just gray
-        left2, center2, right2 = detector.detect_road_edges(test_img2)
-        assert (left2, center2, right2) == (None, None, None), "Should not detect non-existent edges"
+        left2, center2, right2, mask2 = detector.detect_road_edges(test_img2)
+        assert (left2, center2, right2, mask2) == (None, None, None, None), "Should not detect non-existent edges"
         print(f"  ✓ Test 2: Correctly returns None for image without edges")
         
         # Test 3: Single-channel image (fallback)
         gray_img = np.ones((480, 640), dtype=np.uint8) * 64
-        left3, center3, right3 = detector.detect_road_edges(gray_img)
-        assert (left3, center3, right3) == (None, None, None), "Should handle single-channel images"
+        left3, center3, right3, mask3 = detector.detect_road_edges(gray_img)
+        assert (left3, center3, right3, mask3) == (None, None, None, None), "Should handle single-channel images"
         print(f"  ✓ Test 3: Correctly handles single-channel input")
         
         return True

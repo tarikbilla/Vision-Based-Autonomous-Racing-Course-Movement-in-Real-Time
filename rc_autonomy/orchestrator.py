@@ -154,31 +154,98 @@ class ControlOrchestrator:
 
         from .ui import draw_overlay
 
-        # Draw road edges and centerline on live view if auto-tracking
-        live_view = image.copy()
-        if self.color_tracking_enabled:
-            left_edge, road_center, right_edge, road_mask = self.boundary.detect_road_edges(image)
-            if left_edge is not None and right_edge is not None:
-                height = image.shape[0]
-                # Draw road region (semi-transparent overlay)
-                if road_mask is not None:
-                    overlay = live_view.copy()
-                    overlay[road_mask > 0] = (100, 200, 100)  # Green tint for road area
-                    cv2.addWeighted(overlay, 0.2, live_view, 0.8, 0, live_view)
-                
-                # Draw road edges with thicker lines
-                cv2.line(live_view, (left_edge, 0), (left_edge, height), (0, 255, 0), 3)  # Green left edge
-                cv2.line(live_view, (right_edge, 0), (right_edge, height), (0, 255, 0), 3)  # Green right edge
-                # Draw centerline
-                cv2.line(live_view, (road_center, 0), (road_center, height), (255, 0, 0), 3)  # Blue centerline
-                cv2.putText(live_view, f"Road: L={left_edge} C={road_center} R={right_edge}", 
-                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+        # Create main visualization frame
+        display = image.copy()
+        height, width = image.shape[:2]
         
-        live_view = draw_overlay(live_view, None, None, None, self.latest_heading, draw_tracking=False)
-        cv2.imshow("Camera Live", live_view)
+        # ===== DETECT AND DRAW ROAD BOUNDARIES =====
+        left_edge, road_center, right_edge, road_mask = self.boundary.detect_road_edges(image)
+        
+        if left_edge is not None and right_edge is not None:
+            # ===== DRAW ROAD REGION OVERLAY =====
+            if road_mask is not None:
+                # Create green overlay for road area
+                overlay = display.copy()
+                overlay[road_mask > 0] = [0, 200, 0]  # Green tint
+                cv2.addWeighted(overlay, 0.15, display, 0.85, 0, display)
+            
+            # ===== DRAW BOUNDARY LINES =====
+            line_thickness = 4
+            edge_color = (0, 255, 0)  # Green for edges
+            center_color = (255, 0, 0)  # Blue for centerline
+            
+            # Draw left boundary (full height)
+            cv2.line(display, (left_edge, 0), (left_edge, height), edge_color, line_thickness)
+            
+            # Draw right boundary (full height)
+            cv2.line(display, (right_edge, 0), (right_edge, height), edge_color, line_thickness)
+            
+            # Draw centerline (blue, dashed effect using multiple short lines)
+            dash_length = 15
+            gap_length = 10
+            for y in range(0, height, dash_length + gap_length):
+                y_end = min(y + dash_length, height)
+                cv2.line(display, (road_center, y), (road_center, y_end), center_color, 3)
+            
+            # ===== DRAW ROAD INFORMATION TEXT =====
+            road_width = right_edge - left_edge
+            info_text = f"ROAD DETECTED | L:{left_edge:3d} | C:{road_center:3d} | R:{right_edge:3d} | W:{road_width:3d}px"
+            cv2.putText(display, info_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
+                       0.7, (255, 0, 0), 2)
+            
+            # Draw status indicator (green rectangle if road detected)
+            cv2.rectangle(display, (5, 5), (25, 25), (0, 255, 0), 3)
+            
+            # ===== IF TRACKING, SHOW CAR POSITION RELATIVE TO ROAD =====
+            if tracked is not None:
+                car_x = tracked.center[0]
+                error_from_center = car_x - road_center
+                error_percent = (error_from_center / (road_width / 2)) * 100 if road_width > 0 else 0
+                
+                # Draw car position indicator
+                cv2.circle(display, tracked.center, 10, (0, 255, 255), 2)  # Cyan circle
+                
+                # Draw line from car to centerline
+                cv2.line(display, tracked.center, (road_center, tracked.center[1]), 
+                        (200, 100, 0), 2)  # Orange line showing offset
+                
+                # Show alignment info
+                align_text = f"Car Offset: {error_from_center:+.0f}px ({error_percent:+.1f}%)"
+                cv2.putText(display, align_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
+                           0.6, (0, 255, 255), 2)
+                
+                # Show warning if car is too far from center
+                tolerance = road_width * 0.2
+                if abs(error_from_center) > tolerance:
+                    cv2.putText(display, "WARNING: Car drifting!", (10, 90), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        else:
+            # Road not detected - show status
+            cv2.putText(display, "NO ROAD DETECTED - Searching...", (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            cv2.rectangle(display, (5, 5), (25, 25), (0, 0, 255), 3)  # Red indicator
+        
+        # ===== DRAW TRACKING OVERLAY =====
         if tracked is not None and rays is not None:
-            overlay = draw_overlay(image.copy(), tracked.bbox, tracked.center, rays, self.latest_heading)
-            cv2.imshow("Analysis", overlay)
+            display = draw_overlay(display, tracked.bbox, tracked.center, rays, 
+                                  self.latest_heading, draw_tracking=True)
+            
+            # Draw bounding box
+            if tracked.bbox is not None:
+                x, y, w, h = tracked.bbox
+                cv2.rectangle(display, (x, y), (x + w, y + h), (255, 255, 0), 2)
+        
+        # ===== DRAW CONTROL INFORMATION =====
+        control_y = height - 50
+        control_info = (f"Speed: {self.latest_control.speed:3d} | "
+                       f"Left: {self.latest_control.left_turn_value:2d} | "
+                       f"Right: {self.latest_control.right_turn_value:2d}")
+        cv2.putText(display, control_info, (10, control_y), cv2.FONT_HERSHEY_SIMPLEX,
+                   0.6, (255, 255, 255), 2)
+        
+        # Display the result
+        cv2.imshow("RC Autonomy - Road Detection", display)
+        
         if cv2.waitKey(1) & 0xFF == ord("q"):
             self.stop_event.set()
 

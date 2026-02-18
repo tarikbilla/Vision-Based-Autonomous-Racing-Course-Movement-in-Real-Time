@@ -27,7 +27,7 @@ Autonomously driving a small RC car on a marked track requires:
 - Obstacle avoidance beyond boundary/track avoidance (future improvement)
 - Full neural network training on-device (inference only)
 
-## 3) Technology Choice: python vs Python
+## 3) Technology Choice: CPP vs Python
 
 ### Recommendation: **python** for Production Implementation
 
