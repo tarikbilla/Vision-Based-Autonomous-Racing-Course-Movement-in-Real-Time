@@ -57,11 +57,8 @@ class BoundaryDetector:
 
     def detect_road_edges(self, frame: np.ndarray) -> Tuple[Optional[int], Optional[int], Optional[int], Optional[np.ndarray]]:
         """
-        Detect road edges (red/white markers) for curved roads using advanced color detection.
+        Detect road edges for circular track using adaptive threshold.
         Returns: (left_edge_x, center_x, right_edge_x, road_mask)
-        road_mask is a binary mask showing the detected road region.
-        
-        Professional algorithm for reliable boundary detection on racing tracks.
         """
         if frame.ndim != 3 or frame.shape[2] != 3:
             return None, None, None, None
@@ -70,153 +67,79 @@ class BoundaryDetector:
         
         height, width = frame.shape[:2]
         
-        # Convert to HSV for robust color detection
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        # Convert to grayscale
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         
-        # ===== OPTIMIZED WHITE DETECTION =====
-        # Track has white markers - focus detection on white only
-        # Range 1: Very bright white (minimal saturation, maximum brightness)
-        white_mask1 = cv2.inRange(hsv, np.array([0, 0, 180]), np.array([180, 30, 255]))  # Bright white
-        # Range 2: Medium brightness white (low saturation, medium-high value)
-        white_mask2 = cv2.inRange(hsv, np.array([0, 0, 120]), np.array([180, 60, 200]))  # Light gray-white
-        # Range 3: Slightly tinted white (minimal saturation, medium value)
-        white_mask3 = cv2.inRange(hsv, np.array([0, 0, 100]), np.array([180, 80, 180]))  # Pale white-gray
+        # Adaptive threshold
+        binary = cv2.adaptiveThreshold(
+            blurred, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            11, 2
+        )
         
-        # Combine all white detection ranges for comprehensive coverage
-        edge_mask = cv2.bitwise_or(cv2.bitwise_or(white_mask1, white_mask2), white_mask3)
+        # Minimal morphology to remove noise
+        kernel = np.ones((2, 2), np.uint8)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
         
-        # ===== MORPHOLOGICAL CLEANING =====
-        kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        kernel_medium = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        
-        # Remove noise (open operation)
-        edge_mask = cv2.morphologyEx(edge_mask, cv2.MORPH_OPEN, kernel_small, iterations=1)
-        
-        # Fill small holes (close operation)
-        edge_mask = cv2.morphologyEx(edge_mask, cv2.MORPH_CLOSE, kernel_medium, iterations=2)
-        
-        # Dilate to enhance, connect boundary parts, and fill gaps between white markers
-        edge_mask = cv2.dilate(edge_mask, kernel_medium, iterations=3)
-        
-        # ===== FIND CONTOURS =====
-        contours, _ = cv2.findContours(edge_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Find contours
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         if len(contours) == 0:
             return None, None, None, None
         
-        # ===== HANDLE CIRCULAR TRACKS WITH INNER AND OUTER BOUNDARIES =====
-        # For circular/round tracks:
-        # - There are TWO boundaries: inner (donut hole) and outer (track edge)
-        # - The road is between these two boundaries
-        # - Find leftmost/rightmost points on BOTH to define the track
-        
-        # Sort contours by area (largest first)
+        # Sort by area and keep large contours
         contours_sorted = sorted(contours, key=cv2.contourArea, reverse=True)
+        large_contours = [(cv2.contourArea(c), c) for c in contours_sorted if cv2.contourArea(c) >= 700]
         
-        # We need at least 2 significant contours for a circular track
-        if len(contours_sorted) >= 2:
-            # Get the two largest contours (outer and inner boundaries)
-            outer_contour = contours_sorted[0]
-            inner_contour = contours_sorted[1]
+        if len(large_contours) < 2:
+            return None, None, None, None
+        
+        # Get top 10 contours
+        boundary_contours = large_contours[:10]
+        
+        # Get outer and inner boundaries (largest two)
+        outer_area, outer_boundary = boundary_contours[0]
+        inner_area, inner_boundary = boundary_contours[1]
+        
+        try:
+            # Get extremes from outer boundary
+            left_edge_x = int(outer_boundary[:, :, 0].min())
+            right_edge_x = int(outer_boundary[:, :, 0].max())
             
-            outer_area = cv2.contourArea(outer_contour)
-            inner_area = cv2.contourArea(inner_contour)
+            # Create masks
+            outer_mask = np.zeros((height, width), dtype=np.uint8)
+            inner_mask = np.zeros((height, width), dtype=np.uint8)
+            cv2.drawContours(outer_mask, [outer_boundary], 0, 255, -1)
+            cv2.drawContours(inner_mask, [inner_boundary], 0, 255, -1)
             
-            # Verify they're reasonably sized
-            if outer_area > width * height * 0.01 and inner_area > width * height * 0.01:
-                try:
-                    # Get bounds for outer boundary
-                    outer_left = int(outer_contour[:, :, 0].min())
-                    outer_right = int(outer_contour[:, :, 0].max())
-                    
-                    # Get bounds for inner boundary
-                    inner_left = int(inner_contour[:, :, 0].min())
-                    inner_right = int(inner_contour[:, :, 0].max())
-                    
-                    # For a circular track, the road is between inner and outer
-                    # Left edge: use the outer left (where road starts)
-                    # Right edge: use the outer right (where road ends)
-                    # Center: between inner right and outer right (on the road)
-                    
-                    left_edge_x = outer_left
-                    right_edge_x = outer_right
-                    
-                    # Center should be roughly in the middle of the road width
-                    # For this track: inner boundary is at center, outer at edges
-                    road_center_left = (outer_left + inner_left) // 2  # Between outer-left and inner-left
-                    road_center_right = (inner_right + outer_right) // 2  # Between inner-right and outer-right
-                    
-                    # Use the right side center as the main centerline
-                    center_x = road_center_right
-                    
-                    # Verify reasonable separation
-                    min_separation = max(50, width * 0.15)
-                    if right_edge_x - left_edge_x >= min_separation:
-                        # Create road mask between the boundaries
-                        road_mask = np.zeros((height, width), dtype=np.uint8)
-                        cv2.rectangle(road_mask, (inner_left, 0), (outer_right, height), 255, -1)
-                        
-                        return left_edge_x, center_x, right_edge_x, road_mask
-                except:
-                    pass  # Fall through to fallback
-        
-        # ===== FALLBACK: SINGLE LARGE CONTOUR =====
-        # If only one large contour (complete ring), extract extremes
-        largest_contour = max(contours, key=cv2.contourArea)
-        largest_area = cv2.contourArea(largest_contour)
-        
-        if largest_area > width * height * 0.05:
-            try:
-                left_edge_x = int(largest_contour[:, :, 0].min())
-                right_edge_x = int(largest_contour[:, :, 0].max())
-                
-                min_separation = max(50, width * 0.15)
-                if right_edge_x - left_edge_x >= min_separation:
+            # Road area (between boundaries)
+            road_mask = cv2.bitwise_xor(outer_mask, inner_mask)
+            
+            # Calculate center by finding midpoint of road at middle row
+            mid_y = height // 2
+            row = road_mask[mid_y, :]
+            if np.any(row):
+                indices = np.where(row > 0)[0]
+                if len(indices) > 0:
+                    center_x = (indices[0] + indices[-1]) // 2
+                else:
                     center_x = (left_edge_x + right_edge_x) // 2
-                    
-                    road_mask = np.zeros((height, width), dtype=np.uint8)
-                    cv2.rectangle(road_mask, (left_edge_x, 0), (right_edge_x, height), 255, -1)
-                    
-                    return left_edge_x, center_x, right_edge_x, road_mask
-            except:
-                pass
-        
-        # ===== FALLBACK: IDENTIFY SEPARATE LEFT AND RIGHT EDGES =====
-        edge_candidates = []
-        
-        for contour in contours:
-            area = cv2.contourArea(contour)
+            else:
+                center_x = (left_edge_x + right_edge_x) // 2
             
-            if area < 50:
-                continue
-            
-            M = cv2.moments(contour)
-            if M["m00"] <= 0:
-                continue
-            
-            cx = int(M["m10"] / M["m00"])
-            
-            if area < width * height * 0.3:
-                edge_candidates.append((cx, area, contour))
+            # Verify reasonable separation
+            min_separation = max(50, width * 0.15)
+            if right_edge_x - left_edge_x >= min_separation:
+                return left_edge_x, center_x, right_edge_x, road_mask
+        except:
+            pass
         
-        if len(edge_candidates) < 2:
-            return None, None, None, None
+        return None, None, None, None
         
-        edge_candidates.sort(key=lambda x: x[0])
-        
-        left_edge_x = edge_candidates[0][0]
-        right_edge_x = edge_candidates[-1][0]
-        
-        min_separation = max(50, width * 0.15)
-        if right_edge_x - left_edge_x < min_separation:
-            return None, None, None, None
-        
-        road_mask = np.zeros((height, width), dtype=np.uint8)
-        cv2.rectangle(road_mask, (left_edge_x, 0), (right_edge_x, height), 255, -1)
-        
-        center_x = (left_edge_x + right_edge_x) // 2
-        
-        return left_edge_x, center_x, right_edge_x, road_mask
+        return None, None, None, None
 
     def analyze(self, frame: np.ndarray, center: Tuple[int, int], movement: Tuple[int, int]) -> Tuple[List[RayResult], ControlVector]:
         gray = frame

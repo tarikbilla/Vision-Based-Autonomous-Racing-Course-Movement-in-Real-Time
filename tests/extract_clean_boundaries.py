@@ -93,59 +93,6 @@ def extract_clean_boundaries(image_path):
     
     print(f"✓ Drew {len(boundary_contours)} boundary segments in green")
     
-    # ---- Calculate circular centerline ----
-    if len(boundary_contours) >= 2:
-        # For circular track: identify inner and outer boundaries
-        # Assume largest contour is outer, second largest is inner
-        outer_boundary = boundary_contours[0][1]
-        inner_boundary = boundary_contours[1][1]
-        
-        print(f"\n{'='*70}")
-        print(f"CALCULATING CIRCULAR CENTERLINE")
-        print(f"{'='*70}")
-        print(f"  Outer boundary area: {boundary_contours[0][0]:,.0f} px²")
-        print(f"  Inner boundary area: {boundary_contours[1][0]:,.0f} px²")
-        
-        # Create masks for inner and outer boundaries
-        outer_mask = np.zeros((height, width), dtype=np.uint8)
-        inner_mask = np.zeros((height, width), dtype=np.uint8)
-        cv2.drawContours(outer_mask, [outer_boundary], 0, 255, -1)  # Fill
-        cv2.drawContours(inner_mask, [inner_boundary], 0, 255, -1)  # Fill
-        
-        # Road area is between outer and inner
-        road_mask = cv2.bitwise_xor(outer_mask, inner_mask)
-        
-        # Find centerline: for each row, get midpoint between boundaries
-        centerline_points = []
-        for y in range(height):
-            row_road = road_mask[y, :]
-            if np.any(row_road):
-                road_indices = np.where(row_road > 0)[0]
-                if len(road_indices) > 0:
-                    left_edge = road_indices[0]
-                    right_edge = road_indices[-1]
-                    center_x = (left_edge + right_edge) // 2
-                    centerline_points.append((center_x, y))
-        
-        # Draw circular centerline
-        if len(centerline_points) > 1:
-            centerline_points = np.array(centerline_points, dtype=np.int32)
-            cv2.polylines(result, [centerline_points], False, (0, 0, 255), 3)
-            cv2.polylines(clean_boundaries, [centerline_points], False, (0, 0, 255), 3)
-            print(f"✓ Drew circular centerline with {len(centerline_points)} points")
-        else:
-            print("⚠ Could not calculate centerline")
-        
-        # Add text labels
-        cv2.putText(result, "TRACK BOUNDARIES (green)", (20, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
-        cv2.putText(result, "CIRCULAR CENTERLINE (red)", (20, 80),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
-        cv2.putText(result, f"{len(boundary_contours)} segments", (20, 120),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-    else:
-        print("⚠ Need at least 2 boundaries (inner + outer) for circular centerline")
-    
     # ---- Save results ----
     cv2.imwrite("Path-image/clean_boundaries_on_image.png", result)
     cv2.imwrite("Path-image/clean_boundaries_only.png", clean_boundaries)
