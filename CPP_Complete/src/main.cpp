@@ -103,44 +103,58 @@ int main(int argc, char* argv[]) {
             config.ble.characteristic_uuid,
             config.ble.device_identifier
         };
-        auto ble = createBLEClient(target, simulate);
+        auto ble = createBLEClient(target, simulate, deviceMac);
+        
+        // Stop command for emergency/shutdown
+        ControlVector stop_control(false, 0, 0, 0);
         
         if (!simulate) {
-            if (!deviceMac.empty()) {
-                std::cout << "[*] Attempting to connect to device: " << deviceMac << "\n";
-            } else {
-                std::cout << "[*] Attempting to connect to device: " << config.ble.device_mac << "\n";
-            }
+            std::cout << "[1/3] Connecting to BLE car...\n";
             
             bool connected = false;
             for (int attempt = 1; attempt <= config.ble.reconnect_attempts; ++attempt) {
                 try {
                     if (ble->connect()) {
+                        std::cout << "[✓] BLE car connected!\n";
+                        
+                        // Send connection pulse like Python
+                        std::cout << "[*] Sending short START pulse to confirm connection...\n";
+                        ControlVector pulse_control(
+                            true,  // light_on
+                            std::max(5, config.boundary.default_speed),  // speed
+                            0,  // right_turn_value
+                            0   // left_turn_value
+                        );
+                        ble->sendControl(pulse_control);
+                        std::this_thread::sleep_for(std::chrono::seconds(1));
+                        ble->sendControl(stop_control);
+                        std::cout << "[✓] Connection pulse complete.\n";
+                        
                         connected = true;
-                        std::cout << "[✓] BLE connected\n";
                         break;
                     }
                 } catch (const std::exception& e) {
-                    std::cout << "[!] Connection attempt " << attempt << " failed: " << e.what() << "\n";
-                    if (attempt < config.ble.reconnect_attempts) {
-                        std::cout << "[*] Retrying...\n";
-                        std::this_thread::sleep_for(std::chrono::seconds(1));
+                    if (attempt == config.ble.reconnect_attempts) {
+                        std::cerr << "[✗] BLE connection failed: " << e.what() << "\n";
+                        return 1;
                     }
+                    std::cout << "[*] Retry " << attempt << "/" << config.ble.reconnect_attempts << "...\n";
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
                 }
             }
             
             if (!connected) {
-                std::cerr << "[!] Failed to connect to BLE device after " 
+                std::cerr << "[✗] Failed to connect to BLE device after " 
                          << config.ble.reconnect_attempts << " attempts\n";
                 return 1;
             }
         } else {
             ble->connect();
-            std::cout << "[✓] Fake BLE connected (simulation mode)\n";
         }
         std::cout << "\n";
         
         // Create orchestrator
+        std::cout << "[2/3] Starting camera + tracking pipeline...\n";
         OrchestratorOptions orchOptions{
             config.ui.show_window,
             config.ui.command_rate_hz,
@@ -155,8 +169,7 @@ int main(int argc, char* argv[]) {
             orchOptions
         );
         
-        std::cout << "[*] Starting autonomous control system...\n";
-        std::cout << "[*] Press Ctrl+C or 'q' to stop\n\n";
+        std::cout << "[3/3] Autonomy running (press Ctrl+C to stop, or 'q' in window to quit)\n\n";
         
         g_orchestrator->start();
 

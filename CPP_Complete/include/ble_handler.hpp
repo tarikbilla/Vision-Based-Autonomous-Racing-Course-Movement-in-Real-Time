@@ -5,6 +5,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <optional>
 
 struct BLETarget {
     std::string device_mac;
@@ -38,7 +39,12 @@ private:
 
 class RealBLEClient : public BLEClient {
 public:
-    RealBLEClient(const BLETarget& target);
+    RealBLEClient(
+        const BLETarget& target,
+        const std::string& device_name_or_mac = "",
+        int scan_timeout_ms = 10000,
+        std::optional<int> device_index = std::nullopt
+    );
     ~RealBLEClient() override;
     
     bool connect() override;
@@ -46,19 +52,30 @@ public:
     bool sendControl(const ControlVector& control) override;
     bool isConnected() const override;
     
-    // Platform-specific implementations
+    // Device discovery
     std::vector<std::pair<std::string, std::string>> listDevices();
     
 private:
     BLETarget target_;
+    std::string device_name_or_mac_;
+    int scan_timeout_ms_;
+    std::optional<int> device_index_;
     bool connected_;
-    void* platformData_; // Platform-specific BLE data
+    void* platformData_; // Platform-specific BLE data (SimpleBLE adapter/peripheral)
+    std::string service_uuid_;
+    std::string char_uuid_;
     
-    // Platform-specific methods
-    bool platformConnect();
-    bool platformSendControl(const ControlVector& control);
+    // Helper methods matching Python implementation
+    std::vector<std::pair<std::string, std::string>> scanPeripherals();
+    void* findCandidate(); // Returns SimpleBLE peripheral
+    std::optional<std::pair<std::string, std::string>> selectCharacteristic(void* peripheral);
 };
 
-std::unique_ptr<BLEClient> createBLEClient(const BLETarget& target, bool simulate);
+std::unique_ptr<BLEClient> createBLEClient(
+    const BLETarget& target,
+    bool simulate,
+    const std::string& device_hint = "",
+    std::optional<int> device_index = std::nullopt
+);
 
 #endif // BLE_HANDLER_HPP

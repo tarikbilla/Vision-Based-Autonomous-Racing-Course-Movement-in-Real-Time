@@ -23,6 +23,17 @@ sudo apt-get update
 sudo apt-get install -y cmake build-essential libopencv-dev nlohmann-json3-dev
 ```
 
+**For Real BLE Support (Optional):**
+
+To connect to actual RC car hardware, you need SimpleBLE library:
+
+```bash
+# See INSTALL_SIMPLEBLE.md for detailed instructions
+# Building from source is required (not available via package managers)
+```
+
+**Note:** Without SimpleBLE, you can still use simulation mode (`--simulate`), but connecting to real BLE devices won't work.
+
 ### Step 2: Build the Project
 
 ```bash
@@ -32,6 +43,10 @@ cd CPP_Complete
 
 Expected output:
 ```
+SimpleBLE not found - BLE will not work in non-simulation mode
+(or)
+SimpleBLE found - Real BLE support enabled
+
 [✓] Build completed successfully!
 [✓] Executable: build/VisionBasedRCCarControl
 ```
@@ -43,7 +58,7 @@ Expected output:
 ./build/VisionBasedRCCarControl --simulate
 ```
 
-**With Real RC Car:**
+**With Real RC Car (Requires SimpleBLE):**
 ```bash
 ./build/VisionBasedRCCarControl --device XX:XX:XX:XX:XX:XX
 ```
@@ -71,10 +86,13 @@ make -j$(nproc)
 # Show help
 ./build/VisionBasedRCCarControl --help
 
-# Simulation mode (testing without hardware)
+# Simulation mode (testing without hardware - recommended for first run)
 ./build/VisionBasedRCCarControl --simulate
 
-# Connect to BLE device
+# Real hardware mode - uses MAC address from config.json
+./build/VisionBasedRCCarControl
+
+# Real hardware mode - override MAC address
 ./build/VisionBasedRCCarControl --device f9:af:3c:e2:d2:f5
 
 # Use custom config file
@@ -83,6 +101,12 @@ make -j$(nproc)
 # Combine options
 ./build/VisionBasedRCCarControl --simulate --config custom.json
 ```
+
+**Important Notes:**
+- Running without `--simulate` will try to connect to real BLE hardware
+- Without `--device`, it uses the MAC address from `config/config.json`
+- **Requires SimpleBLE library** for real hardware (see INSTALL_SIMPLEBLE.md)
+- **Use `--simulate` for testing** without hardware or SimpleBLE
 
 ## ⚙️ Configuration
 
@@ -245,6 +269,27 @@ brew upgrade cmake  # macOS
 ```
 
 ### Runtime Issues
+
+**Error: SimpleBLE library not available**
+```
+[!] SimpleBLE library not available
+[!] Please install SimpleBLE to use real BLE functionality
+[!] Use --simulate flag for testing without hardware
+```
+- Solution: See `INSTALL_SIMPLEBLE.md` for installation instructions
+- Or use simulation mode: `--simulate`
+
+**Error: No BLE adapters found**
+- Ensure Bluetooth is enabled on your system
+- macOS: System Preferences → Bluetooth
+- Linux: `sudo systemctl status bluetooth`
+- Check your system has a Bluetooth adapter
+
+**Error: DRIFT car not found during scan**
+- Ensure the RC car is powered on
+- Make sure the car is in pairing/discoverable mode
+- Try specifying MAC address: `--device XX:XX:XX:XX:XX:XX`
+- Check the car is within Bluetooth range (< 10 meters)
 
 **Error: Camera not found**
 - Check camera index in `config/config.json` (try 0, 1, 2)
