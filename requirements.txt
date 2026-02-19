@@ -1,3 +1,0 @@
-numpy>=1.23
-simplepyble>=0.6.2
-opencv-contrib-python>=4.8.0

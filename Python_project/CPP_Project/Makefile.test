@@ -1,0 +1,21 @@
+# Simple Makefile for BLE test on Mac
+CXX = clang++
+CXXFLAGS = -std=c++17 -Wall -Wextra -O2
+TARGET = test_ble_mac
+SOURCE = test_ble_mac.cpp
+
+# For Mac, we can compile without BLE library (just command generation)
+# To actually send BLE commands, you'll need to link a BLE library
+
+all: $(TARGET)
+
+$(TARGET): $(SOURCE)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SOURCE)
+
+clean:
+	rm -f $(TARGET)
+
+run: $(TARGET)
+	./$(TARGET)
+
+.PHONY: all clean run

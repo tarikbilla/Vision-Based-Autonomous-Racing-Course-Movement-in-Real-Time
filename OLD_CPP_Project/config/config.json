@@ -1,0 +1,38 @@
+# Vision-Based RC Car Control System Configuration
+# Format: key=value
+
+# camera settings
+camera.index=0
+camera.width=1920
+camera.height=1080
+camera.fps=30
+
+# tracker settings
+tracker.type=CSRT
+tracker.max_midpoints=10
+
+# boundary detection
+boundary.black_threshold=50
+boundary.ray_max_length=200
+boundary.evasive_threshold=80
+boundary.ray_angles=-60,0,60
+boundary.base_speed=10
+
+# ble settings
+ble.device_mac=ed:5c:23:84:48:8d
+ble.characteristic_uuid=6e400002-b5a3-f393-e0a9-e50e24dcca9e
+ble.device_identifier=bf0a00082800
+ble.command_rate_hz=200
+ble.connection_timeout=5
+ble.reconnection_attempts=3
+
+# control settings
+control.speed_limit_forward=100
+control.speed_limit_reverse=100
+control.steering_limit=30
+control.light_on_value=0200
+control.light_off_value=0000
+
+# system settings
+system.show_ui=true
+system.autonomous_mode=false
