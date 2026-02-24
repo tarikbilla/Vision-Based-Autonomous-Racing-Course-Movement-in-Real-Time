@@ -16,6 +16,18 @@ std::unique_ptr<ControlOrchestrator> g_orchestrator;
 void signalHandler(int signal) {
     std::cout << "\n[*] Received signal " << signal << ". Shutting down...\n";
     if (g_orchestrator) {
+        // Send STOP command before disconnecting BLE
+        try {
+            // Access BLE client from orchestrator
+            // This assumes orchestrator exposes a method to send STOP
+            ControlVector stop_control(false, 0, 0, 0);
+            // Try to send STOP via BLE
+            // If orchestrator exposes ble_ as public or via getter, use it
+            // Otherwise, add a method to orchestrator to send STOP
+            g_orchestrator->sendStopAndDisconnect();
+        } catch (...) {
+            std::cerr << "[!] Failed to send STOP command during shutdown\n";
+        }
         g_orchestrator->stop();
     }
     exit(0);
@@ -60,7 +72,104 @@ int main(int argc, char* argv[]) {
         signal(SIGINT, signalHandler);
         signal(SIGTERM, signalHandler);
         
-        // Initialize components
+        // Initialize BLE client first (match Python ordering: connect before camera)
+        std::cout << "[*] Initializing BLE...\n";
+        BLETarget target{
+            config.ble.device_mac,
+            config.ble.characteristic_uuid,
+            config.ble.device_identifier
+        };
+        auto ble = createBLEClient(target, simulate, deviceMac);
+        
+        // Stop command for emergency/shutdown
+        ControlVector stop_control(false, 0, 0, 0);
+        
+        // Attempt to connect to BLE device (before opening the camera)
+        if (!simulate) {
+            std::cout << "[1/3] Connecting to BLE car...\n";
+
+            bool connected = false;
+            for (int attempt = 1; attempt <= config.ble.reconnect_attempts; ++attempt) {
+                try {
+                    if (ble->connect()) {
+                        std::cout << "[✓] BLE car connected!\n";
+
+                        // Send connection pulse like Python
+                        std::cout << "[*] Sending short START pulse to confirm connection...\n";
+                        ControlVector pulse_control(
+                            true,  // light_on
+                            std::max(5, config.boundary.default_speed),  // speed
+                            0,  // right_turn_value
+                            0   // left_turn_value
+                        );
+                        ble->sendControl(pulse_control);
+                        std::this_thread::sleep_for(std::chrono::seconds(1));
+                        ble->sendControl(stop_control);
+                        std::cout << "[✓] Connection pulse complete.\n";
+
+                        // After connecting, run the car forward for 2 seconds
+                        std::cout << "[*] Running car forward for 2 seconds to verify motion...\n";
+                        ControlVector run_control(
+                            true, // light_on (turn lights on during run)
+                            std::max(5, config.boundary.default_speed), // speed (match START pulse)
+                            0, // right_turn
+                            0  // left_turn
+                        );
+                        if (!ble->sendControl(run_control)) {
+                            std::cerr << "[!] Failed to send run command to BLE device\n";
+                        }
+                        std::this_thread::sleep_for(std::chrono::seconds(2));
+                        if (!ble->sendControl(stop_control)) {
+                            std::cerr << "[!] Failed to send stop command to BLE device\n";
+                        }
+                        std::cout << "[✓] Ran for 2 seconds and stopped.\n";
+
+                        connected = true;
+                        break;
+                    }
+                } catch (const std::exception& e) {
+                    if (attempt == config.ble.reconnect_attempts) {
+                        std::cerr << "[✗] BLE connection failed: " << e.what() << "\n";
+                        return 1;
+                    }
+                    std::cout << "[*] Retry " << attempt << "/" << config.ble.reconnect_attempts << "...\n";
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                }
+            }
+
+            if (!connected) {
+                std::cerr << "[✗] Failed to connect to BLE device after " 
+                         << config.ble.reconnect_attempts << " attempts\n";
+                return 1;
+            }
+        } else {
+            // In simulation mode we still call connect to keep interfaces consistent
+            ble->connect();
+
+            // Mirror the real-device behavior in simulation: send a short START
+            // pulse and run the simulated car for 2 seconds so users can observe.
+            std::cout << "[*] (simulate) Sending short START pulse...\n";
+            ControlVector pulse_control(
+                true,
+                std::max(5, config.boundary.default_speed),
+                0,
+                0
+            );
+            ble->sendControl(pulse_control);
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            ble->sendControl(stop_control);
+
+            std::cout << "[*] (simulate) Running simulated car for 2 seconds...\n";
+            ControlVector run_control(false, config.boundary.default_speed, 0, 0);
+            ble->sendControl(run_control);
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            ble->sendControl(stop_control);
+            std::cout << "[✓] (simulate) Run complete.\n";
+        }
+
+        std::cout << "\n";
+
+        // Initialize camera and other components after BLE is ready
         std::cout << "[*] Initializing camera...\n";
         std::unique_ptr<CameraCapture> camera;
         if (simulate) {
@@ -79,11 +188,11 @@ int main(int argc, char* argv[]) {
         }
         std::cout << "[✓] Camera initialized: " << config.camera.width << "x"
                  << config.camera.height << " @ " << config.camera.fps << " FPS\n\n";
-        
+
         std::cout << "[*] Initializing tracker: " << config.tracker.tracker_type << "\n";
         auto tracker = createTracker(config.tracker.tracker_type, simulate);
         std::cout << "[✓] Tracker initialized\n\n";
-        
+
         std::cout << "[*] Initializing boundary detector...\n";
         std::vector<int> rayAngles = {-45, 0, 45};
         auto boundary = std::make_unique<BoundaryDetector>(
@@ -96,61 +205,6 @@ int main(int argc, char* argv[]) {
             config.boundary.light_on
         );
         std::cout << "[✓] Boundary detector initialized\n\n";
-        
-        std::cout << "[*] Initializing BLE...\n";
-        BLETarget target{
-            config.ble.device_mac,
-            config.ble.characteristic_uuid,
-            config.ble.device_identifier
-        };
-        auto ble = createBLEClient(target, simulate, deviceMac);
-        
-        // Stop command for emergency/shutdown
-        ControlVector stop_control(false, 0, 0, 0);
-        
-        if (!simulate) {
-            std::cout << "[1/3] Connecting to BLE car...\n";
-            
-            bool connected = false;
-            for (int attempt = 1; attempt <= config.ble.reconnect_attempts; ++attempt) {
-                try {
-                    if (ble->connect()) {
-                        std::cout << "[✓] BLE car connected!\n";
-                        
-                        // Send connection pulse like Python
-                        std::cout << "[*] Sending short START pulse to confirm connection...\n";
-                        ControlVector pulse_control(
-                            true,  // light_on
-                            std::max(5, config.boundary.default_speed),  // speed
-                            0,  // right_turn_value
-                            0   // left_turn_value
-                        );
-                        ble->sendControl(pulse_control);
-                        std::this_thread::sleep_for(std::chrono::seconds(1));
-                        ble->sendControl(stop_control);
-                        std::cout << "[✓] Connection pulse complete.\n";
-                        
-                        connected = true;
-                        break;
-                    }
-                } catch (const std::exception& e) {
-                    if (attempt == config.ble.reconnect_attempts) {
-                        std::cerr << "[✗] BLE connection failed: " << e.what() << "\n";
-                        return 1;
-                    }
-                    std::cout << "[*] Retry " << attempt << "/" << config.ble.reconnect_attempts << "...\n";
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
-                }
-            }
-            
-            if (!connected) {
-                std::cerr << "[✗] Failed to connect to BLE device after " 
-                         << config.ble.reconnect_attempts << " attempts\n";
-                return 1;
-            }
-        } else {
-            ble->connect();
-        }
         std::cout << "\n";
         
         // Create orchestrator

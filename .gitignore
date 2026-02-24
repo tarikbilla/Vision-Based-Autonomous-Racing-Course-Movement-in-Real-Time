@@ -32,3 +32,5 @@ Makefile
 # OS files
 .DS_Store
 Thumbs.db
+CPP_Complete/HelpFiles/allinone.zip
+CPP_Complete/HelpFiles/allinone/build_msvc/*.dll

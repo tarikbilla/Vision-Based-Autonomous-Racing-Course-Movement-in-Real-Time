@@ -20,7 +20,12 @@ void CameraCapture::open() {
         close();
     }
     
-    cap_.open(source_);
+    // Prefer V4L2 backend on Linux to avoid GStreamer pipeline issues
+    // Try opening with CAP_V4L2 first, then fall back to default
+    cap_.open(source_, cv::CAP_V4L2);
+    if (!cap_.isOpened()) {
+        cap_.open(source_);
+    }
     
     if (!cap_.isOpened()) {
         // Try to find available camera
@@ -37,6 +42,21 @@ void CameraCapture::open() {
     }
     
     if (!cap_.isOpened()) {
+        // Try to find available camera across indices with V4L2 preference
+        std::cout << "[!] Camera source " << source_ << " failed. Searching for available cameras...\n";
+        for (int i = 0; i < 10; ++i) {
+            cap_.open(i, cv::CAP_V4L2);
+            if (!cap_.isOpened()) cap_.open(i);
+            if (cap_.isOpened()) {
+                std::cout << "[✓] Found camera at index " << i << "\n";
+                source_ = i;
+                break;
+            }
+            cap_.release();
+        }
+    }
+
+    if (!cap_.isOpened()) {
         throw std::runtime_error("Camera capture failed to open (tried indices 0-9)");
     }
     
@@ -44,7 +64,43 @@ void CameraCapture::open() {
     cap_.set(cv::CAP_PROP_FRAME_HEIGHT, height_);
     cap_.set(cv::CAP_PROP_FPS, fps_);
     
+    // Warmup and verify at least one frame can be grabbed. If not, try a
+    // GStreamer pipeline fallback (useful for some USB capture devices
+    // and capture cards on embedded Linux where default backends fail).
     warmupCamera();
+
+    cv::Mat test;
+    if (!cap_.read(test) || test.empty()) {
+        std::cerr << "[!] Camera read verification failed after open (backend may be unstable)\n";
+
+        // Attempt GStreamer fallback using the device path (/dev/videoN)
+        std::string devicePath = "/dev/video" + std::to_string(source_);
+        std::string pipeline = "v4l2src device=" + devicePath
+            + " ! video/x-raw, width=(int)" + std::to_string(width_)
+            + ", height=(int)" + std::to_string(height_)
+            + ", framerate=" + std::to_string(fps_) + "/1"
+            + " ! videoconvert ! appsink drop=true";
+
+        std::cerr << "[*] Trying GStreamer fallback pipeline: " << pipeline << "\n";
+        cap_.release();
+        if (cap_.open(pipeline, cv::CAP_GSTREAMER)) {
+            warmupCamera();
+            cv::Mat gstTest;
+            if (cap_.read(gstTest) && !gstTest.empty()) {
+                std::cerr << "[✓] GStreamer fallback succeeded\n";
+                isOpened_ = true;
+                return;
+            } else {
+                std::cerr << "[!] GStreamer fallback opened but failed to read frames\n";
+                cap_.release();
+            }
+        } else {
+            std::cerr << "[!] GStreamer fallback could not open (OpenCV may not have GStreamer support)\n";
+        }
+
+        throw std::runtime_error("Camera opened but failed to deliver frames (backend issues)");
+    }
+
     isOpened_ = true;
 }
 
@@ -57,8 +113,15 @@ void CameraCapture::close() {
 
 void CameraCapture::warmupCamera() {
     cv::Mat frame;
-    for (int i = 0; i < 3; ++i) {
-        cap_ >> frame;
+    // Read a few frames to allow camera to warm up; verify each read
+    for (int i = 0; i < 5; ++i) {
+        if (!cap_.read(frame) || frame.empty()) {
+            // brief pause and retry
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+        }
+        // got a valid frame, short delay to stabilize
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 }
 

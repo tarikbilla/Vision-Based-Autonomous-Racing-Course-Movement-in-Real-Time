@@ -48,6 +48,7 @@ set(SOURCES
     src/ble_handler.cpp
     src/commands.cpp
     src/control_orchestrator.cpp
+    src/car_detector.cpp
 )
 
 # Create executable

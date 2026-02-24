@@ -6,6 +6,7 @@
 #include "boundary_detection.hpp"
 #include "ble_handler.hpp"
 #include "config_manager.hpp"
+#include "car_detector.hpp"
 
 #include <thread>
 #include <queue>
@@ -13,6 +14,17 @@
 #include <mutex>
 #include <condition_variable>
 #include <memory>
+
+// Car detection candidate structure
+struct DetectionCandidate {
+    int idx = -1;
+    double area = 0.0;
+    int cx = 0;
+    int cy = 0;
+    cv::Rect bbox;
+    double solidity = 0.0;
+    double score = 0.0; // For ranking candidates
+};
 
 struct OrchestratorOptions {
     bool showWindow;
@@ -34,6 +46,8 @@ public:
     
     void start();
     void stop();
+    // New method to send STOP and disconnect BLE
+    void sendStopAndDisconnect();
     
 private:
     std::unique_ptr<CameraCapture> camera_;
@@ -67,6 +81,11 @@ private:
     std::mutex frameLock_;
     cv::Mat roadMask_;
     
+    // Motion-based detection
+    cv::Ptr<cv::BackgroundSubtractor> bgSubtractor_;
+    int warmupFrames_;
+    bool useMotionDetection_;
+    
     // Thread functions
     void cameraLoop();
     void trackingLoop();
@@ -79,7 +98,10 @@ public:
     
     // Helper functions
     void render(const cv::Mat& image, const TrackedObject& tracked, const std::vector<RayResult>& rays);
-    void detectRedCar(const cv::Mat& frame, TrackedObject& result);
+    bool detectRedCar(const cv::Mat& frame, TrackedObject& result);
+    bool detectRedCarInitial(const cv::Mat& frame, TrackedObject& result);
+    bool detectRedCarRealtime(const cv::Mat& frame, TrackedObject& result);
+    bool detectCarByMotion(const cv::Mat& frame, int frameCount, TrackedObject& result);
 };
 
 #endif // CONTROL_ORCHESTRATOR_HPP

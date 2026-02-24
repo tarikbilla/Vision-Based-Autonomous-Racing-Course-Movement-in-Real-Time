@@ -28,7 +28,7 @@ bool FakeBLEClient::sendControl(const ControlVector& control) {
     if (!connected_) {
         return false;
     }
-    auto cmd = Commands::buildCommand(control);
+    auto cmd = Commands::buildCommand(target_.device_identifier, control);
     // Simulate sending
     return true;
 }
@@ -81,7 +81,7 @@ bool RealBLEClient::sendControl(const ControlVector& control) {
     }
     
     try {
-        auto cmd = Commands::buildCommand(control);
+        auto cmd = Commands::buildCommand(target_.device_identifier, control);
         // Platform-specific BLE send would be implemented here
         return true;
     } catch (const std::exception& e) {

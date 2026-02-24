@@ -1,14 +1,14 @@
 {
   "camera": {
     "index": 0,
-    "width": 1920,
-    "height": 1080,
-    "fps": 30
+    "width": 1280,
+    "height": 720,
+    "fps": 15
   },
   "ble": {
     "device_mac": "f9:af:3c:e2:d2:f5",
     "characteristic_uuid": "6e400002-b5a3-f393-e0a9-e50e24dcca9e",
-    "device_identifier": "DRIFT",
+    "device_identifier": "bf0a00082800",
     "connection_timeout_s": 10,
     "reconnect_attempts": 3
   },
@@ -16,7 +16,7 @@
     "black_threshold": 50,
     "ray_max_length": 200,
     "evasive_distance": 100,
-    "default_speed": 100,
+    "default_speed": 20,
     "steering_limit": 50,
     "light_on": true
   },
@@ -25,7 +25,7 @@
   },
   "ui": {
     "show_window": true,
-    "command_rate_hz": 20,
+    "command_rate_hz": 50,
     "color_tracking": false
   }
 }

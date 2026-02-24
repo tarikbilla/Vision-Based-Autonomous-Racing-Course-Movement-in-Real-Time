@@ -18,7 +18,10 @@ struct ControlVector {
 
 class Commands {
 public:
-    static std::vector<uint8_t> buildCommand(const ControlVector& control);
+    // Build command bytes matching Python implementation:
+    // buildCommand(device_identifier_hex, control)
+    // device_identifier_hex: hex string like "bf0a00082800"
+    static std::vector<uint8_t> buildCommand(const std::string& device_identifier_hex, const ControlVector& control);
     
     // Utility functions
     static int32_t clamp(int32_t value, int32_t min_val, int32_t max_val);

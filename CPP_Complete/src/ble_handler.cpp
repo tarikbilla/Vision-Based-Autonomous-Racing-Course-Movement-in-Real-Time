@@ -41,7 +41,7 @@ bool FakeBLEClient::sendControl(const ControlVector& control) {
     if (!connected_) {
         return false;
     }
-    auto cmd = Commands::buildCommand(control);
+    auto cmd = Commands::buildCommand(target_.device_identifier, control);
     // Simulate sending
     return true;
 }
@@ -94,7 +94,7 @@ std::vector<std::pair<std::string, std::string>> RealBLEClient::scanPeripherals(
     auto peripherals = adapter.scan_get_results();
     std::vector<std::pair<std::string, std::string>> devices;
     
-    for (const auto& p : peripherals) {
+    for (auto& p : peripherals) {
         devices.push_back({p.identifier(), p.address()});
     }
     
@@ -116,11 +116,18 @@ void* RealBLEClient::findCandidate() {
     auto peripherals = adapter.scan_get_results();
     std::vector<std::pair<std::string, std::string>> scanned_devices;
     
-    for (const auto& p : peripherals) {
+    for (auto& p : peripherals) {
         scanned_devices.push_back({p.identifier(), p.address()});
     }
     
     std::cout << "[✓] Found " << scanned_devices.size() << " BLE devices\n";
+    
+    // Debug: print all device details for diagnosis
+    for (size_t i = 0; i < std::min(size_t(5), scanned_devices.size()); ++i) {
+        std::cout << "[DEBUG] Device " << i << ": name='" << scanned_devices[i].first 
+                  << "' addr='" << scanned_devices[i].second << "'\n";
+    }
+    std::cout << "[DEBUG] Looking for MAC: " << target_.device_mac << "\n";
     
     // Use device_index if provided
     if (device_index_.has_value()) {
@@ -139,13 +146,15 @@ void* RealBLEClient::findCandidate() {
     // Find matching candidates
     std::vector<Peripheral> candidates;
     
-    for (const auto& peripheral : peripherals) {
+    for (auto& peripheral : peripherals) {
         std::string name = peripheral.identifier();
         std::string address = peripheral.address();
         std::string name_lower = name;
         std::string name_upper = name;
         std::string address_lower = address;
         std::string target_mac_lower = target_.device_mac;
+        
+        std::cout << "[DEBUG] Checking: name='" << name << "' addr='" << address << "'\n";
         
         // Convert to lowercase
         std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
@@ -163,6 +172,7 @@ void* RealBLEClient::findCandidate() {
             if (name_lower.find(hint_lower) != std::string::npos ||
                 address_lower == hint_lower) {
                 match = true;
+                std::cout << "[DEBUG] -> MATCH (device_name_or_mac hint)\n";
             }
         } else {
             // Match drift car patterns (same as Python)
@@ -198,7 +208,7 @@ void* RealBLEClient::findCandidate() {
         );
     }
     
-    std::cout << "[✓] Selected device: " << candidates[0].identifier() 
+    std::cout << "[✓] Selected device: " << candidates[0].identifier()
               << " - " << candidates[0].address() << "\n";
     return new Peripheral(candidates[0]);
 }
@@ -209,8 +219,8 @@ std::optional<std::pair<std::string, std::string>> RealBLEClient::selectCharacte
     auto services = peripheral->services();
     
     // First try to find exact UUID match
-    for (const auto& service : services) {
-        for (const auto& characteristic : service.characteristics()) {
+    for (auto& service : services) {
+        for (auto& characteristic : service.characteristics()) {
             std::string char_uuid = characteristic.uuid();
             std::string target_uuid = target_.characteristic_uuid;
             
@@ -225,8 +235,8 @@ std::optional<std::pair<std::string, std::string>> RealBLEClient::selectCharacte
     }
     
     // Fallback to first writable characteristic
-    for (const auto& service : services) {
-        for (const auto& characteristic : service.characteristics()) {
+    for (auto& service : services) {
+        for (auto& characteristic : service.characteristics()) {
             std::cout << "[*] Using fallback characteristic: " << characteristic.uuid() << "\n";
             return std::make_pair(service.uuid(), characteristic.uuid());
         }
@@ -279,43 +289,57 @@ void RealBLEClient::disconnect() {
 
 bool RealBLEClient::sendControl(const ControlVector& control) {
     if (!connected_ || !platformData_) {
+        std::cerr << "[!] sendControl: not connected or no peripheral\n";
         return false;
     }
     
     try {
         Peripheral* peripheral = static_cast<Peripheral*>(platformData_);
-        
-        std::string command_hex = Commands::buildCommand(control);
-        
-        // Convert hex string to bytes
-        std::vector<uint8_t> command_bytes;
-        for (size_t i = 0; i < command_hex.length(); i += 2) {
-            std::string byte_str = command_hex.substr(i, 2);
-            uint8_t byte = static_cast<uint8_t>(std::stoi(byte_str, nullptr, 16));
-            command_bytes.push_back(byte);
+        auto command_bytes = Commands::buildCommand(target_.device_identifier, control);
+
+        // Log hex BEFORE attempting write so we see it even if write fails
+        std::ostringstream hexout;
+        hexout << std::hex << std::setfill('0');
+        for (auto b : command_bytes) {
+            hexout << std::setw(2) << static_cast<int>(b);
         }
-        
+        std::cout << "[*] BLE -> write (hex): " << hexout.str() << " (bytes: " << command_bytes.size() << ")\n";
+        std::cout << "[*] Service UUID: " << service_uuid_ << "\n";
+        std::cout << "[*] Char UUID: " << char_uuid_ << "\n";
+
         SimpleBLE::ByteArray data(command_bytes.begin(), command_bytes.end());
-        
-        // Try write_request first, fallback to write_command
+
+        // Use write_command (more reliable, matches Python fallback)
+        bool wrote = false;
+        std::string last_error;
         try {
-            peripheral->write_request(service_uuid_, char_uuid_, data);
-            return true;
-        } catch (...) {
+            std::cout << "[*] Attempting write_command...\n";
+            peripheral->write_command(service_uuid_, char_uuid_, data);
+            std::cout << "[✓] write_command succeeded\n";
+            wrote = true;
+        } catch (const std::exception& e) {
+            last_error = std::string(e.what());
+            std::cout << "[!] write_command failed: " << last_error << "\n";
+            std::cout << "[*] Attempting write_request as fallback...\n";
             try {
-                peripheral->write_command(service_uuid_, char_uuid_, data);
-                return true;
-            } catch (...) {
-                return false;
+                peripheral->write_request(service_uuid_, char_uuid_, data);
+                std::cout << "[✓] write_request succeeded\n";
+                wrote = true;
+            } catch (const std::exception& e2) {
+                last_error = std::string(e2.what());
+                std::cout << "[!] write_request also failed: " << last_error << "\n";
             }
         }
+
+        if (!wrote) {
+            std::cerr << "[!] Both write methods failed. Last error: " << last_error << "\n";
+        }
+        return wrote;
     } catch (const std::exception& e) {
-        std::cerr << "[!] Failed to send control: " << e.what() << "\n";
+        std::cerr << "[!] Unexpected error in sendControl: " << e.what() << "\n";
         return false;
     }
-}
-
-std::vector<std::pair<std::string, std::string>> RealBLEClient::listDevices() {
+}std::vector<std::pair<std::string, std::string>> RealBLEClient::listDevices() {
     return scanPeripherals();
 }
 
