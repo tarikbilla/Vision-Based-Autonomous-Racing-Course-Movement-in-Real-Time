@@ -3,7 +3,7 @@
     "index": 0,
     "width": 1280,
     "height": 720,
-    "fps": 15
+    "fps": 30
   },
   "ble": {
     "device_mac": "f9:af:3c:e2:d2:f5",
@@ -17,7 +17,7 @@
     "ray_max_length": 200,
     "evasive_distance": 100,
     "default_speed": 40,
-    "steering_limit": 50,
+    "steering_limit": 1,
     "light_on": true
   },
   "tracker": {

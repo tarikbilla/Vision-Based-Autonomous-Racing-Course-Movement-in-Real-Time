@@ -580,10 +580,10 @@ std::pair<std::vector<RayResult>, ControlVector> BoundaryDetector::analyze(
         
         if (leftDist < rightDist) {
             // Obstacle on left, turn right
-            rightTurn = std::min(steeringLimit_, (evasiveDistance_ - leftDist) * 2);
+            rightTurn = std::min(steeringLimit_, (evasiveDistance_ - leftDist) * 1.5);
         } else if (rightDist < leftDist) {
             // Obstacle on right, turn left
-            leftTurn = std::min(steeringLimit_, (evasiveDistance_ - rightDist) * 2);
+            leftTurn = std::min(steeringLimit_, (evasiveDistance_ - rightDist) * 1.5);
         } else {
             // Obstacle ahead, try to go around based on which side has more space
             if (rightDist > leftDist) {
@@ -598,9 +598,9 @@ std::pair<std::vector<RayResult>, ControlVector> BoundaryDetector::analyze(
         if (centerDist < (leftDist + rightDist) / 2) {
             // Turn based on which side has more space
             if (rightDist > leftDist) {
-                rightTurn = std::min(steeringLimit_, (int)((leftDist - centerDist) * 1.5));
+                rightTurn = std::min(steeringLimit_, (int)((leftDist - centerDist) * 0.7));
             } else {
-                leftTurn = std::min(steeringLimit_, (int)((rightDist - centerDist) * 1.5));
+                leftTurn = std::min(steeringLimit_, (int)((rightDist - centerDist) * 0.7));
             }
         }
         // Maintain normal speed
