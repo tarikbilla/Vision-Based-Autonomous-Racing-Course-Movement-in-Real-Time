@@ -278,7 +278,13 @@ void ControlOrchestrator::trackingLoop() {
             {
                 std::lock_guard<std::mutex> lock(controlMutex_);
                 latestControl_ = control;
+                
+                // Also store tracked object and rays for rendering
+                std::lock_guard<std::mutex> trackedLock(trackedMutex_);
+                latestTracked_ = tracked;
+                latestRays_ = rays;
             }
+            
             latestHeading_ = boundary_->headingFromMovement(tracked.movement);
 
             if (frameCount % 45 == 0) { // Log every 3 seconds at 15Hz
@@ -327,24 +333,27 @@ void ControlOrchestrator::bleLoop() {
 void ControlOrchestrator::uiLoop() {
     const int DISPLAY_DELAY = 30; // milliseconds
     
-    TrackedObject lastTracked;
-    std::vector<RayResult> lastRays;
     while (!stopEvent_) {
         cv::Mat frameToDisplay;
+        TrackedObject trackedToRender;
+        std::vector<RayResult> raysToRender;
+        
         {
             std::lock_guard<std::mutex> lock(frameLock_);
             if (!latestFrame_.empty()) {
                 frameToDisplay = latestFrame_.clone();
             }
         }
+        
         // Get latest detected car and rays
         {
-            std::lock_guard<std::mutex> lock(controlMutex_);
-            // Use lastTracked and lastRays only (no latestTracked_ or latestRays_)
-            // lastTracked and lastRays are already declared and used
+            std::lock_guard<std::mutex> lock(trackedMutex_);
+            trackedToRender = latestTracked_;
+            raysToRender = latestRays_;
         }
+        
         if (!frameToDisplay.empty()) {
-            render(frameToDisplay, lastTracked, lastRays);
+            render(frameToDisplay, trackedToRender, raysToRender);
             if (cv::waitKey(DISPLAY_DELAY) == 'q') {
                 break;
             }

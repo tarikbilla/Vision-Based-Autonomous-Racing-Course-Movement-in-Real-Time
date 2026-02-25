@@ -86,6 +86,11 @@ private:
     int warmupFrames_;
     bool useMotionDetection_;
     
+    // Tracked object storage for rendering
+    TrackedObject latestTracked_;
+    std::vector<RayResult> latestRays_;
+    std::mutex trackedMutex_;
+    
     // Thread functions
     void cameraLoop();
     void trackingLoop();
