@@ -87,24 +87,55 @@ CPP_Complete/
 - **README.md**: Comprehensive project documentation
 
 ## Quick Start
-### Build & Run
+### Prerequisites
+#### macOS (Homebrew)
+```bash
+brew update
+brew install cmake opencv simpleble
+```
+
+#### Ubuntu / Debian
+```bash
+sudo apt update
+sudo apt install -y cmake build-essential pkg-config \
+   libopencv-dev
+```
+> For SimpleBLE on Linux, follow SimpleBLE's official install instructions if it is not available in your package manager.
+
+#### Raspberry Pi OS (Bullseye/Bookworm)
+```bash
+sudo apt update
+sudo apt install -y cmake build-essential pkg-config \
+   libopencv-dev
+```
+> For SimpleBLE on Raspberry Pi OS, install from source if your repo does not provide it.
+
+### Build & Run (Recommended)
 ```bash
 cd CPP_Complete
 chmod +x build.sh START.sh
 ./build.sh
-./START.sh
+./build/VisionBasedRCCarControl
 ```
 
 ### Manual Build
 ```bash
-cd CPP_Complete/build
+cd CPP_Complete
+mkdir -p build
+cd build
 cmake ..
 make -j4
 ./VisionBasedRCCarControl
 ```
 
+### Run (Simulation Mode)
+```bash
+cd CPP_Complete/build
+./VisionBasedRCCarControl --simulate
+```
+
 ### Configuration
-Edit `config/config.json` to set your car's BLE MAC address and adjust parameters.
+Edit `CPP_Complete/config/config.json` to set your car's BLE MAC address and adjust parameters.
 
 ## Usage
 - Press 'a' for auto car detection (motion-based)
