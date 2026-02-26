@@ -107,8 +107,8 @@ int main(int argc, char* argv[]) {
                         ble->sendControl(stop_control);
                         std::cout << "[✓] Connection pulse complete.\n";
 
-                        // After connecting, run the car forward for 2 seconds
-                        std::cout << "[*] Running car forward for 2 seconds to verify motion...\n";
+                        // After connecting, run the car forward for 1 second to verify motion
+                        std::cout << "[*] Running car forward for 1 second to verify motion...\n";
                         ControlVector run_control(
                             true, // light_on (turn lights on during run)
                             std::max(5, config.boundary.default_speed), // speed (match START pulse)
@@ -118,11 +118,11 @@ int main(int argc, char* argv[]) {
                         if (!ble->sendControl(run_control)) {
                             std::cerr << "[!] Failed to send run command to BLE device\n";
                         }
-                        std::this_thread::sleep_for(std::chrono::seconds(2));
+                        std::this_thread::sleep_for(std::chrono::seconds(1));
                         if (!ble->sendControl(stop_control)) {
                             std::cerr << "[!] Failed to send stop command to BLE device\n";
                         }
-                        std::cout << "[✓] Ran for 2 seconds and stopped.\n";
+                        std::cout << "[✓] Ran for 1 seconds and stopped.\n";
 
                         connected = true;
                         break;

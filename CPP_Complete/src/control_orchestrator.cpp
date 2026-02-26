@@ -56,6 +56,19 @@ void ControlOrchestrator::stop() {
     // if (uiThread_.joinable()) uiThread_.join(); // UI loop is not threaded anymore
     
     camera_->close();
+    
+    // Send stop command multiple times to ensure car receives it
+    if (ble_) {
+        std::cout << "[*] Sending STOP command (speed=0, left=0, right=0)...\n";
+        ControlVector stop_control(false, 0, 0, 0);
+        for (int i = 0; i < 10; ++i) {
+            ble_->sendControl(stop_control);
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        std::cout << "[*] Stop command sent. Waiting for car to stop...\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    
     ble_->disconnect();
     
     std::cout << "[*] Control Orchestrator stopped\n";
@@ -64,10 +77,21 @@ void ControlOrchestrator::stop() {
 // New method to send STOP and disconnect BLE
 void ControlOrchestrator::sendStopAndDisconnect() {
     if (ble_) {
+        std::cout << "[*] Sending STOP command (speed=0, left=0, right=0)...\n";
         ControlVector stop_control(false, 0, 0, 0);
-        ble_->sendControl(stop_control);
+        
+        // Send stop command 10 times with delays to ensure car receives and processes it
+        for (int i = 0; i < 10; ++i) {
+            ble_->sendControl(stop_control);
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        
+        std::cout << "[*] Stop command sent. Waiting for car to stop...\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Give car time to stop
+        
+        std::cout << "[*] Disconnecting BLE...\n";
         ble_->disconnect();
-        std::cout << "[*] Sent STOP and disconnected BLE\n";
+        std::cout << "[✓] BLE disconnected\n";
     }
 }
 
