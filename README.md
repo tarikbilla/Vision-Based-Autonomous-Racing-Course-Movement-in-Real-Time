@@ -45,7 +45,7 @@ A production-ready, fully autonomous RC car system using computer vision and Blu
 
 ## File Directory & Short Descriptions
 ```
-CPP_Complete/
+Root
 ├── include/                    # Header files
 │   ├── camera_capture.hpp      # Camera interface
 │   ├── object_tracker.hpp      # Tracking algorithms
@@ -112,7 +112,6 @@ sudo apt install -y cmake build-essential pkg-config \
 
 ### Build & Run (Recommended)
 ```bash
-cd CPP_Complete
 chmod +x build.sh START.sh
 ./build.sh
 ./build/VisionBasedRCCarControl
@@ -120,7 +119,6 @@ chmod +x build.sh START.sh
 
 ### Manual Build
 ```bash
-cd CPP_Complete
 mkdir -p build
 cd build
 cmake ..
@@ -130,12 +128,12 @@ make -j4
 
 ### Run (Simulation Mode)
 ```bash
-cd CPP_Complete/build
+cd Rootbuild
 ./VisionBasedRCCarControl --simulate
 ```
 
 ### Configuration
-Edit `CPP_Complete/config/config.json` to set your car's BLE MAC address and adjust parameters.
+Edit `Rootconfig/config.json` to set your car's BLE MAC address and adjust parameters.
 
 ## Usage
 - Press 'a' for auto car detection (motion-based)

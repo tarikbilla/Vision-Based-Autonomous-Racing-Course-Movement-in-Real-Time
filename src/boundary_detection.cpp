@@ -409,7 +409,8 @@ BoundaryDetector::BoundaryDetector(
       defaultSpeed_(defaultSpeed),
       steeringLimit_(steeringLimit),
       lightOn_(lightOn),
-      lastHeading_(0.0) {
+      lastHeading_(0.0),
+      lastSteerByte_(128) {
         speedCap_ = defaultSpeed_;
 }
 
@@ -620,6 +621,7 @@ std::pair<std::vector<RayResult>, ControlVector> BoundaryDetector::analyze(
 ControlVector BoundaryDetector::analyzeWithCenterline(const cv::Point& carCenter,
                                                       const cv::Point& movement) {
     if (!hasCenterline_ || centerline_.empty()) {
+        lastSteerByte_ = 128;  // Reset to center on invalid state
         return ControlVector(lightOn_, 0, 0, 0);
     }
 
@@ -643,7 +645,19 @@ ControlVector BoundaryDetector::analyzeWithCenterline(const cv::Point& carCenter
     double delta = purePursuitDelta((double)carCenter.x, (double)carCenter.y, theta,
                                     target, wheelbasePx_, lookaheadPx_);
     delta = std::clamp(delta, -deltaMaxRad, deltaMaxRad);
-    int steerByte = deltaToSteeringByte(delta, deltaMaxRad);
+    int rawSteerByte = deltaToSteeringByte(delta, deltaMaxRad);
+    
+    // Apply deadzone: if steering is near center, dampen it
+    int steerByte = rawSteerByte;
+    if (rawSteerByte >= (128 - steeringDeadzone_) && rawSteerByte <= (128 + steeringDeadzone_)) {
+        steerByte = 128;  // Center position (no steering)
+    }
+    
+    // Apply exponential smoothing to reduce oscillation
+    // newValue = smoothing * rawValue + (1-smoothing) * oldValue
+    steerByte = (int)std::round(steeringSmoothing_ * steerByte + (1.0 - steeringSmoothing_) * lastSteerByte_);
+    steerByte = std::clamp(steerByte, 0, 255);
+    lastSteerByte_ = steerByte;
 
     auto steerStrength = [](int steerByteVal) -> double {
         if (steerByteVal == 0) return 0.0;

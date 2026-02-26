@@ -16,7 +16,7 @@
     "black_threshold": 50,
     "ray_max_length": 200,
     "evasive_distance": 100,
-    "default_speed": 40,
+    "default_speed": 20,
     "steering_limit": 1,
     "light_on": true
   },
