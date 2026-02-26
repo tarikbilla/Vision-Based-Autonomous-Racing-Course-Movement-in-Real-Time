@@ -67,7 +67,7 @@ private:
 
     // Pure pursuit parameters (pixel space)
     double wheelbasePx_ = 4.0;
-    double lookaheadPx_ = 100.0;            // Look ahead distance - balance between smooth and responsive
+    double lookaheadPx_ = 110.0;            // Look further ahead for smoother path
     double deltaMaxDeg_ = 20.0;             // Max steering angle (moderate)
     double turnSlowK_ = 0.7;                // Speed reduction during turns (0.7 = reduce speed by 70% of turn strength)
     int minSpeed_ = 0;
@@ -75,8 +75,8 @@ private:
     
     // Steering smoothing and deadzone
     int lastSteerByte_ = 0;                 // Previous steering value for smoothing
-    double steeringSmoothing_ = 0.7;        // Smoothing factor (higher = more responsive)
-    int steeringDeadzone_ = 5;              // Ignore steering values within ±5 bytes (larger deadzone for stability)
+    double steeringSmoothing_ = 0.5;        // Heavy smoothing (50% new, 50% old)
+    int steeringDeadzone_ = 12;             // Large deadzone to prevent micro-corrections
     
 public:
     double headingFromMovement(const cv::Point& movement);
