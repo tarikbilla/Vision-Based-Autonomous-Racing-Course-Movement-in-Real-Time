@@ -5,6 +5,7 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 #include <tuple>
+#include <string>
 
 struct RayResult {
     int angle_deg;

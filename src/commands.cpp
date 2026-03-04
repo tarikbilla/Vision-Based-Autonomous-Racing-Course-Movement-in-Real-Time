@@ -1,6 +1,8 @@
 #include "commands.hpp"
 #include <sstream>
 #include <iomanip>
+#include <string>
+#include <vector>
 
 std::vector<uint8_t> Commands::buildCommand(const std::string& device_identifier_hex, const ControlVector& control) {
     // Build command bytes matching Python implementation:
