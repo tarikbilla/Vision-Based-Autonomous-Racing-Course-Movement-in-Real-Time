@@ -1,6 +1,20 @@
 # Raspberry Pi 4 Quick Setup
 
-## 1. Transfer Files to RPi4
+## If Everything Already Installed (Git Clone)
+
+```bash
+# Just build and run
+cd ~/path/to/project
+chmod +x build_rpi4.sh
+./build_rpi4.sh
+
+# Run optimized version
+./build/VisionBasedRCCarControl --rpi
+```
+
+## If Fresh Install Needed
+
+### 1. Transfer Files to RPi4
 ```bash
 # From your PC
 scp -r /path/to/project pi@raspberrypi.local:~/RC-Car
@@ -8,11 +22,17 @@ scp -r /path/to/project pi@raspberrypi.local:~/RC-Car
 
 ## 2. Run Setup
 ```bash
-# On RPi4
+# On RPi4 - Use minimal setup (recommended)
 cd ~/RC-Car
+chmod +x setup_rpi4_minimal.sh
+./setup_rpi4_minimal.sh
+
+# OR use full setup (builds SimpleBLE from source)
 chmod +x setup_rpi4.sh
 ./setup_rpi4.sh
-sudo reboot
+
+# Reboot only if you configured GPU memory
+# sudo reboot
 ```
 
 ## 3. Run Optimized Version
@@ -33,8 +53,9 @@ cd ~/RC-Car
 ## Files Created
 
 1. `config/config_rpi4.json` - Optimized config
-2. `setup_rpi4.sh` - Auto setup script
-3. `RASPBERRY_PI_4_OPTIMIZATION.md` - Full guide
+2. `setup_rpi4.sh` - Full setup script (builds SimpleBLE)
+3. `setup_rpi4_minimal.sh` - Minimal setup (recommended)
+4. `RASPBERRY_PI_4_OPTIMIZATION.md` - Full guide
 
 ## Command Line Usage
 

@@ -28,11 +28,17 @@ sudo apt install -y \
 echo "[3/6] Installing SimpleBLE..."
 if [ ! -d "SimpleBLE" ]; then
     git clone https://github.com/OpenBluetoothToolbox/SimpleBLE.git
+    cd SimpleBLE
+    git submodule update --init --recursive
+else
+    cd SimpleBLE
+    git pull
+    git submodule update --init --recursive
 fi
-cd SimpleBLE
-git submodule update --init --recursive
-mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
+
+# Build and install SimpleBLE
+mkdir -p build_simpleble && cd build_simpleble
+cmake ../simpleble -DCMAKE_BUILD_TYPE=Release -DLIBFMT_VENDORIZE=ON
 make -j$(nproc)
 sudo make install
 sudo ldconfig
@@ -44,8 +50,19 @@ echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governo
 
 # Increase GPU memory (requires reboot)
 echo "[5/6] Configuring GPU memory..."
-if ! grep -q "gpu_mem=256" /boot/config.txt; then
-    echo "gpu_mem=256" | sudo tee -a /boot/config.txt
+if [ -f /boot/firmware/config.txt ]; then
+    # Raspberry Pi OS Bookworm and newer
+    CONFIG_FILE="/boot/firmware/config.txt"
+elif [ -f /boot/config.txt ]; then
+    # Older Raspberry Pi OS
+    CONFIG_FILE="/boot/config.txt"
+else
+    echo "[!] Could not find config.txt, skipping GPU memory configuration"
+    CONFIG_FILE=""
+fi
+
+if [ -n "$CONFIG_FILE" ] && ! sudo grep -q "gpu_mem=256" "$CONFIG_FILE"; then
+    echo "gpu_mem=256" | sudo tee -a "$CONFIG_FILE"
     echo "[!] GPU memory set to 256MB - reboot required"
 fi
 

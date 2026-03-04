@@ -33,12 +33,16 @@
 
 ### Installation
 ```bash
-# Run setup script
+# Recommended: Use minimal setup
+chmod +x setup_rpi4_minimal.sh
+./setup_rpi4_minimal.sh
+
+# Alternative: Full setup (builds SimpleBLE from source)
 chmod +x setup_rpi4.sh
 ./setup_rpi4.sh
 
-# Reboot for GPU memory changes
-sudo reboot
+# Optional: Reboot for GPU memory changes (only if configured)
+# sudo reboot
 ```
 
 ### Running
@@ -110,6 +114,22 @@ gpu_freq=750
 ```
 
 ## Troubleshooting
+
+### SimpleBLE Build Fails
+```bash
+# Use minimal setup instead
+./setup_rpi4_minimal.sh
+
+# Or manually build SimpleBLE
+cd SimpleBLE
+git submodule update --init --recursive
+mkdir -p build_simpleble
+cd build_simpleble
+cmake ../simpleble -DCMAKE_BUILD_TYPE=Release -DLIBFMT_VENDORIZE=ON
+make -j$(nproc)
+sudo make install
+sudo ldconfig
+```
 
 ### Camera Not Opening
 ```bash
