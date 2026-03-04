@@ -43,7 +43,6 @@ int main(int argc, char* argv[]) {
         std::string configPath = "config/config.json";
         bool simulate = false;
         std::string deviceMac;
-        bool lowResource = false;
         
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
@@ -53,24 +52,15 @@ int main(int argc, char* argv[]) {
                 simulate = true;
             } else if (arg == "--device" && i + 1 < argc) {
                 deviceMac = argv[++i];
-            } else if (arg == "--rpi" || arg == "--low-resource") {
-                lowResource = true;
-                configPath = "config/config_rpi4.json";
             } else if (arg == "--help") {
                 std::cout << "Usage: " << argv[0] << " [options]\n"
                          << "Options:\n"
                          << "  --config <path>      Path to config file (default: config/config.json)\n"
-                         << "  --simulate           Run in simulation mode\n"
-                         << "  --device <mac>       BLE device MAC address\n"
-                         << "  --rpi                Raspberry Pi mode (low resolution, optimized)\n"
-                         << "  --low-resource       Low resource mode (same as --rpi)\n"
-                         << "  --help               Show this help message\n";
+                         << "  --simulate          Run in simulation mode\n"
+                         << "  --device <mac>      BLE device MAC address\n"
+                         << "  --help              Show this help message\n";
                 return 0;
             }
-        }
-        
-        if (lowResource) {
-            std::cout << "[*] Low-resource mode enabled (Raspberry Pi optimized)\n";
         }
         
         // Load configuration

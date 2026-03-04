@@ -225,9 +225,9 @@ void ControlOrchestrator::cameraLoop() {
 void ControlOrchestrator::trackingLoop() {
     int frameCount = 0;
     auto lastProcessed = std::chrono::system_clock::now();
-    const auto analysisInterval = std::chrono::milliseconds(100); // 10 FPS for RPi4 compatibility
+    const auto analysisInterval = std::chrono::milliseconds(66); // ~15 FPS for better control frequency
     
-    std::cout << "[*] Tracking started at ~10Hz analysis rate.\n";
+    std::cout << "[*] Tracking started at ~15Hz analysis rate.\n";
     
     while (!stopEvent_) {
         if (!trackerReady_) {
@@ -257,8 +257,8 @@ void ControlOrchestrator::trackingLoop() {
         auto [left, center, right, roadMask] = boundary_->detectRoadEdges(frame.image);
         roadMask_ = roadMask;
 
-        // Build centerline map only once every 2 seconds on RPi4 to save CPU
-        if (!boundary_->hasCenterline() && frameCount % 20 == 0) {
+        // Build centerline map (from red/white barriers) when available
+        if (!boundary_->hasCenterline() && frameCount % 30 == 0) {
             if (boundary_->buildCenterlineFromFrame(frame.image)) {
                 std::cout << "[✓] Centerline map built from live frame\n";
             }
@@ -311,7 +311,7 @@ void ControlOrchestrator::trackingLoop() {
             
             latestHeading_ = boundary_->headingFromMovement(tracked.movement);
 
-            if (frameCount % 30 == 0) { // Log every 3 seconds at 10Hz
+            if (frameCount % 45 == 0) { // Log every 3 seconds at 15Hz
                 std::cout << "[" << detectionMethod << "] [" << frameCount << "] "
                          << "Car: (" << tracked.center.x << "," << tracked.center.y << ") | "
                          << "Speed: " << control.speed << " | "
