@@ -21,7 +21,8 @@ ControlOrchestrator::ControlOrchestrator(
       roiSelected_(false),
       trackerReady_(false),
       warmupFrames_(120),
-            useMotionDetection_(false) {
+            useMotionDetection_(false),
+      programStartTime_(std::chrono::high_resolution_clock::now()) {
         // Initialize background subtractor for motion detection
         bgSubtractor_ = cv::createBackgroundSubtractorMOG2(400, 18.0, false);
 }
@@ -53,9 +54,26 @@ void ControlOrchestrator::stop() {
     if (cameraThread_.joinable()) cameraThread_.join();
     if (trackingThread_.joinable()) trackingThread_.join();
     if (bleThread_.joinable()) bleThread_.join();
-    // if (uiThread_.joinable()) uiThread_.join(); // UI loop is not threaded anymore
     
     camera_->close();
+    
+    // Calculate total execution time
+    auto programEndTime = std::chrono::high_resolution_clock::now();
+    auto totalDuration = std::chrono::duration_cast<std::chrono::seconds>(programEndTime - programStartTime_);
+    
+    // Print timing statistics
+    std::cout << "\n========================================\n";
+    std::cout << "TIMING STATISTICS\n";
+    std::cout << "========================================\n";
+    std::cout << "Total Program Execution Time: " << totalDuration.count() << " seconds\n";
+    
+    if (totalBLECommandsSent_ > 0) {
+        double avgLatency = (double)totalBLELatencyMs_ / totalBLECommandsSent_;
+        std::cout << "Total BLE Commands Sent: " << totalBLECommandsSent_ << "\n";
+        std::cout << "Average BLE Send Latency: " << avgLatency << " ms\n";
+        std::cout << "Total BLE Latency: " << totalBLELatencyMs_ << " ms\n";
+    }
+    std::cout << "========================================\n\n";
     
     // Send stop command multiple times to ensure car receives it
     if (ble_) {
@@ -346,10 +364,21 @@ void ControlOrchestrator::bleLoop() {
     int interval_ms = 20; // 50 commands per second
     
     while (!stopEvent_) {
+        auto sendStartTime = std::chrono::high_resolution_clock::now();
+        
         {
             std::lock_guard<std::mutex> lock(controlMutex_);
             ble_->sendControl(latestControl_);
         }
+        
+        auto sendEndTime = std::chrono::high_resolution_clock::now();
+        auto sendDuration = std::chrono::duration_cast<std::chrono::microseconds>(sendEndTime - sendStartTime);
+        
+        // Update timing stats
+        totalBLECommandsSent_++;
+        totalBLELatencyMs_ += sendDuration.count() / 1000; // Convert to milliseconds
+        lastBLESendTime_ = sendEndTime;
+        
         std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
     }
 }

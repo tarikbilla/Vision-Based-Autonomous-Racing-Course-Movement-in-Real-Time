@@ -91,6 +91,12 @@ private:
     std::vector<RayResult> latestRays_;
     std::mutex trackedMutex_;
     
+    // Timing measurements
+    std::chrono::high_resolution_clock::time_point programStartTime_;
+    std::chrono::high_resolution_clock::time_point lastBLESendTime_;
+    long long totalBLECommandsSent_ = 0;
+    long long totalBLELatencyMs_ = 0;
+    
     // Thread functions
     void cameraLoop();
     void trackingLoop();
