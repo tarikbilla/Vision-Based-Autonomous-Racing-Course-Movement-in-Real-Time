@@ -1,9 +1,9 @@
 {
   "camera": {
     "index": 0,
-    "width": 320,
-    "height": 240,
-    "fps": 8
+    "width": 640,
+    "height": 480,
+    "fps": 20
   },
   "ble": {
     "device_mac": "f9:af:3c:e2:d2:f5",
@@ -25,7 +25,7 @@
   },
   "ui": {
     "show_window": true,
-    "command_rate_hz": 12,
+    "command_rate_hz": 20,
     "color_tracking": false
   }
 }
