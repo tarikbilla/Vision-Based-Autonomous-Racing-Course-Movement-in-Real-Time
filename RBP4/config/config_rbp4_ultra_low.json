@@ -3,7 +3,7 @@
     "index": 0,
     "width": 320,
     "height": 240,
-    "fps": 10
+    "fps": 8
   },
   "ble": {
     "device_mac": "f9:af:3c:e2:d2:f5",
@@ -14,9 +14,9 @@
   },
   "boundary": {
     "black_threshold": 50,
-    "ray_max_length": 90,
-    "evasive_distance": 55,
-    "default_speed": 14,
+    "ray_max_length": 70,
+    "evasive_distance": 45,
+    "default_speed": 10,
     "steering_limit": 1,
     "light_on": true
   },
@@ -24,8 +24,8 @@
     "tracker_type": "KCF"
   },
   "ui": {
-    "show_window": false,
-    "command_rate_hz": 20,
+    "show_window": true,
+    "command_rate_hz": 12,
     "color_tracking": false
   }
 }

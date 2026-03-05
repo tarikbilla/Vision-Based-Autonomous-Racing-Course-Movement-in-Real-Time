@@ -233,7 +233,7 @@ void ControlOrchestrator::cameraLoop() {
             
             {
                 std::lock_guard<std::mutex> lock(frameQueueMutex_);
-                if (frameQueue_.size() < 5) {
+                if (frameQueue_.size() < 2) {
                     frameQueue_.push(frame);
                     frameQueueCV_.notify_one();
                 }
@@ -248,9 +248,9 @@ void ControlOrchestrator::cameraLoop() {
 void ControlOrchestrator::trackingLoop() {
     int frameCount = 0;
     auto lastProcessed = std::chrono::system_clock::now();
-    const auto analysisInterval = std::chrono::milliseconds(66); // ~15 FPS for better control frequency
+    const auto analysisInterval = std::chrono::milliseconds(125); // ~8 FPS for Raspberry Pi stability
     
-    std::cout << "[*] Tracking started at ~15Hz analysis rate.\n";
+    std::cout << "[*] Tracking started at ~8Hz analysis rate.\n";
     
     while (!stopEvent_) {
         if (!trackerReady_) {
@@ -389,7 +389,9 @@ void ControlOrchestrator::bleLoop() {
 }
 
 void ControlOrchestrator::uiLoop() {
-    const int DISPLAY_DELAY = 30; // milliseconds
+    const int DISPLAY_DELAY = 80; // milliseconds
+    cv::namedWindow("RC Car Autonomous Control", cv::WINDOW_NORMAL);
+    cv::resizeWindow("RC Car Autonomous Control", 320, 240);
     
     while (!stopEvent_) {
         cv::Mat frameToDisplay;
@@ -480,6 +482,10 @@ void ControlOrchestrator::render(const cv::Mat& image, const TrackedObject& trac
             tracked.center.y + static_cast<int>(ray.distance * std::sin(angleRad))
         );
         cv::line(display, tracked.center, end, cv::Scalar(255, 0, 255), 2);
+    }
+
+    if (display.cols > 320 || display.rows > 240) {
+        cv::resize(display, display, cv::Size(320, 240), 0, 0, cv::INTER_AREA);
     }
 
     cv::imshow("RC Car Autonomous Control", display);

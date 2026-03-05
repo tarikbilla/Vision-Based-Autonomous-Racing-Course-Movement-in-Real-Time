@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include <algorithm>
+#include <string>
 
 struct ControlVector {
     bool light_on;
