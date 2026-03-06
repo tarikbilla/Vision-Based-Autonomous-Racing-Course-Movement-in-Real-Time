@@ -128,19 +128,29 @@ int main(int argc, char* argv[]) {
                         break;
                     }
                 } catch (const std::exception& e) {
-                    if (attempt == config.ble.reconnect_attempts) {
+                    if (attempt < config.ble.reconnect_attempts) {
+                        std::cout << "[!] BLE connection attempt " << attempt << " failed: " << e.what() << "\n";
+                        std::cout << "[*] Retry " << attempt + 1 << "/" << config.ble.reconnect_attempts << "...\n";
+                        std::this_thread::sleep_for(std::chrono::seconds(1));
+                    } else {
                         std::cerr << "[✗] BLE connection failed: " << e.what() << "\n";
-                        return 1;
                     }
-                    std::cout << "[*] Retry " << attempt << "/" << config.ble.reconnect_attempts << "...\n";
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
                 }
             }
 
             if (!connected) {
-                std::cerr << "[✗] Failed to connect to BLE device after " 
+                std::cerr << "[⚠] WARNING: Failed to connect to BLE device after " 
                          << config.ble.reconnect_attempts << " attempts\n";
-                return 1;
+                std::cerr << "[⚠] The system will continue with car control disabled.\n";
+                std::cerr << "[⚠] Use --simulate flag to test without hardware:\n";
+                std::cerr << "[⚠]   ./RBP4/build/VisionBasedRCCarControl_RBP4 --config <config> --simulate\n";
+                std::cerr << "[⚠] Or check Bluetooth setup:\n";
+                std::cerr << "[⚠]   sudo systemctl restart bluetooth\n";
+                std::cerr << "[⚠]   bluetoothctl devices\n\n";
+                
+                // Continue anyway with simulation mode as fallback
+                std::cout << "[*] Falling back to simulation mode (no car control)\n";
+                simulate = true;
             }
         } else {
             // In simulation mode we still call connect to keep interfaces consistent
@@ -223,7 +233,11 @@ int main(int argc, char* argv[]) {
             orchOptions
         );
         
-        std::cout << "[3/3] Autonomy running (press Ctrl+C to stop, or 'q' in window to quit)\n\n";
+        if (orchOptions.showWindow) {
+            std::cout << "[3/3] Autonomy running (press Ctrl+C to stop, or 'q' in window to quit)\n\n";
+        } else {
+            std::cout << "[3/3] Headless mode ready. Press 'a' then Enter in terminal to start autonomous run.\n\n";
+        }
         
         g_orchestrator->start();
 

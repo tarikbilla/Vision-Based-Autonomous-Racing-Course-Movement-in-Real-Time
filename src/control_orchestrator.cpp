@@ -115,6 +115,16 @@ void ControlOrchestrator::sendStopAndDisconnect() {
 
 void ControlOrchestrator::selectROI() {
     std::cout << "[*] Waiting for first camera frame...\n";
+    
+    // In headless mode, auto-select red car detection
+    if (!options_.showWindow) {
+        std::cout << "[*] Headless mode: auto-enabling red car detection\n";
+        useMotionDetection_ = true;
+        options_.colorTracking = true;
+        trackerReady_ = true;
+        return;
+    }
+    
     std::cout << "[*] Press 's' to select ROI, 'a' for auto red-car tracking, or 'q' to quit." << std::endl;
 
     camera_->open();
@@ -205,7 +215,9 @@ void ControlOrchestrator::selectROI() {
             if (trackerReady_) break;
         }
     }
-    cv::destroyWindow("Camera Live");
+    if (options_.showWindow) {
+        cv::destroyWindow("Camera Live");
+    }
 }
 
 void ControlOrchestrator::cameraLoop() {
@@ -407,8 +419,13 @@ void ControlOrchestrator::uiLoop() {
         
         if (!frameToDisplay.empty()) {
             render(frameToDisplay, trackedToRender, raysToRender);
-            if (cv::waitKey(DISPLAY_DELAY) == 'q') {
-                break;
+            if (options_.showWindow) {
+                if (cv::waitKey(DISPLAY_DELAY) == 'q') {
+                    break;
+                }
+            } else {
+                // In headless mode, just sleep instead of waitKey
+                std::this_thread::sleep_for(std::chrono::milliseconds(DISPLAY_DELAY));
             }
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(DISPLAY_DELAY));
@@ -477,8 +494,11 @@ void ControlOrchestrator::render(const cv::Mat& image, const TrackedObject& trac
         cv::line(display, tracked.center, end, cv::Scalar(255, 0, 255), 2);
     }
 
-    cv::imshow("RC Car Autonomous Control", display);
-    cv::waitKey(1);
+    // Only show window if GUI is enabled
+    if (options_.showWindow) {
+        cv::imshow("RC Car Autonomous Control", display);
+        cv::waitKey(1);
+    }
 // End of render function
 }
 

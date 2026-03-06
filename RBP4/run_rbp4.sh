@@ -11,11 +11,19 @@ if [[ ! -x "$BIN" ]]; then
 fi
 
 echo "=========================================="
-echo "RBP4 - Vision RC Car (GUI Mode)"
+echo "RBP4 - Vision RC Car (WITH WINDOW)"
 echo "=========================================="
 echo "Config: $CFG"
 echo "Resolution: 640x480 @ 15fps"
-echo "GUI: ENABLED (requires X11/desktop)"
+echo "GUI: ENABLED (shows live detection)"
+echo ""
+echo "Controls:"
+echo "  q = Quit"
+echo "  s = Manual tracking (select ROI)"
+echo "  a = Auto detection (red car)"
+echo ""
+echo "Note: Requires HDMI display or X11 forwarding"
+echo "      For headless RPi: ./RBP4/run_rbp4_headless.sh"
 echo ""
 
 cd "$ROOT_DIR"

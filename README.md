@@ -195,10 +195,15 @@ Edit `Rootconfig/config.json` to set your car's BLE MAC address and adjust param
 
 ## Deployment
 - **Raspberry Pi 4:** 
-  - Use pre-installation commands above
-  - Build with `./RBP4/build_rbp4.sh`
-  - Run with `./RBP4/run_rbp4.sh`
-  - Config: `RBP4/config/config_rbp4_ultra_low.json` (640x480@20fps, 20Hz BLE)
+   - Use pre-installation commands above
+   - Build (one-time): `./RBP4/build_rbp4.sh`
+   - Headless mode (no UI / no camera feed): `./RBP4/run_rbp4_headless.sh`
+      - After BLE connection, press `a` then Enter to start automatic detection and run
+      - Stop with `Ctrl+C`
+   - GUI mode (camera feed visible): `./RBP4/run_rbp4.sh`
+      - Press `a` for auto detection, `s` for ROI select, `q` to quit
+   - Headless config: `RBP4/config/config_rbp4_headless.json` (`show_window: false`)
+   - GUI config: `RBP4/config/config_rbp4_gui.json` (`show_window: true`)
 - **macOS/Linux (Development):** Install OpenCV, SimpleBLE, build, configure, run
 - **Other Linux:** Follow Ubuntu/Debian installation, adapt for your package manager
 

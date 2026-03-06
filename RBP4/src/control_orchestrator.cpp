@@ -2,6 +2,7 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <cctype>
 
 ControlOrchestrator::ControlOrchestrator(
     std::unique_ptr<CameraCapture> camera,
@@ -38,9 +39,7 @@ void ControlOrchestrator::start() {
     
     std::cout << "[*] Starting Control Orchestrator\n";
     
-    if (options_.showWindow) {
-        selectROI();
-    }
+    selectROI();
     
     cameraThread_ = std::thread(&ControlOrchestrator::cameraLoop, this);
     trackingThread_ = std::thread(&ControlOrchestrator::trackingLoop, this);
@@ -116,12 +115,39 @@ void ControlOrchestrator::sendStopAndDisconnect() {
 void ControlOrchestrator::selectROI() {
     std::cout << "[*] Waiting for first camera frame...\n";
     
-    // In headless mode, auto-select red car detection
+    // In headless mode, wait for terminal key to start auto detection
     if (!options_.showWindow) {
-        std::cout << "[*] Headless mode: auto-enabling red car detection\n";
+        std::cout << "[*] Headless mode (no camera feed).\n";
+        std::cout << "[*] After BLE connection, press 'a' then Enter to start auto car detection and running.\n";
+        std::cout << "[*] Press 'q' then Enter to quit.\n";
+
+        while (!stopEvent_) {
+            std::cout << "[headless] command> ";
+            std::string input;
+            if (!std::getline(std::cin, input)) {
+                throw std::runtime_error("Failed to read terminal input in headless mode");
+            }
+
+            if (input.empty()) {
+                continue;
+            }
+
+            char cmd = static_cast<char>(std::tolower(static_cast<unsigned char>(input[0])));
+            if (cmd == 'q') {
+                throw std::runtime_error("User requested quit before start");
+            }
+            if (cmd == 'a') {
+                break;
+            }
+
+            std::cout << "[!] Unknown command. Use 'a' to start or 'q' to quit.\n";
+        }
+
+        std::cout << "[*] Headless mode: enabling auto red car detection and autonomous control\n";
         useMotionDetection_ = true;
         options_.colorTracking = true;
         trackerReady_ = true;
+        std::cout << "[✓] Start command accepted. Autonomous run is active.\n";
         return;
     }
     

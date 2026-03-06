@@ -1,13 +1,28 @@
-# RBP4 (Raspberry Pi 4 Optimized Version)
+# RBP4 (Raspberry Pi 4 Optimized Version) ✅
 
-This folder contains a fully optimized build for Raspberry Pi 4 with **headless mode support** for running without a display.
+**Status:** Complete | **Same as Main Project** - Just pick your mode!
 
-## 🎯 What's Different
+This folder contains the **exact same functionality as the main project**, optimized for Raspberry Pi 4, with a simple choice between window and windowless modes.
 
-- **Separate build**: Does not modify root project
-- **Optimized settings**: Lower resolution (640×480 @ 15fps) for RPi performance
-- **Headless support**: Can run without X11/display server
-- **Two run modes**: GUI mode (with display) and headless mode (SSH/remote)
+## 🎯 Two Simple Modes
+
+### Mode 1: WITH WINDOW (Shows Detection)
+```bash
+./RBP4/run_rbp4.sh
+```
+- ✅ Live window showing detection
+- ✅ Interactive controls
+- ✅ Same as main project
+- ❌ Needs HDMI or X11
+
+### Mode 2: WITHOUT WINDOW (Headless)
+```bash
+./RBP4/run_rbp4_headless.sh
+```
+- ✅ No display needed
+- ✅ Perfect for SSH
+- ✅ Lower CPU usage
+- ✅ Same control as Mode 1
 
 ## 📁 Structure
 
