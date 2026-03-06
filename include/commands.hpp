@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <string>
 #include <algorithm>
 
 struct ControlVector {

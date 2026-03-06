@@ -1,9 +1,9 @@
 {
-  "camera": {
+{  "camera": {
     "index": 0,
-    "width": 640,
-    "height": 480,
-    "fps": 20
+    "width": 1280,
+    "height": 720,
+    "fps": 30
   },
   "ble": {
     "device_mac": "f9:af:3c:e2:d2:f5",
@@ -13,10 +13,10 @@
     "reconnect_attempts": 3
   },
   "boundary": {
-    "black_threshold": 50,
-    "ray_max_length": 70,
-    "evasive_distance": 45,
-    "default_speed": 10,
+    "black_threshold": 40,
+    "ray_max_length": 100,
+    "evasive_distance": 60,
+    "default_speed": 15,
     "steering_limit": 1,
     "light_on": true
   },
@@ -25,7 +25,7 @@
   },
   "ui": {
     "show_window": true,
-    "command_rate_hz": 20,
+    "command_rate_hz": 30,
     "color_tracking": false
   }
 }

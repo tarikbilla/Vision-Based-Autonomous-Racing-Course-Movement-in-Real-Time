@@ -102,13 +102,37 @@ sudo apt install -y cmake build-essential pkg-config \
 ```
 > For SimpleBLE on Linux, follow SimpleBLE's official install instructions if it is not available in your package manager.
 
-#### Raspberry Pi OS (Bullseye/Bookworm)
+#### Raspberry Pi OS (Bullseye/Bookworm) - Complete Setup
+**CRITICAL:** Use the automated setup script for easiest installation.
+
 ```bash
-sudo apt update
-sudo apt install -y cmake build-essential pkg-config \
-   libopencv-dev
+# Copy this file to your Pi, then run:
+chmod +x rpi_setup.sh
+./rpi_setup.sh
 ```
-> For SimpleBLE on Raspberry Pi OS, install from source if your repo does not provide it.
+
+Or install manually (key missing packages on Pi):
+```bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install critical missing packages
+sudo apt install -y nlohmann-json3-dev libglib2.0-dev libdbus-1-dev libudev-dev
+
+# Build and install SimpleBLE
+cd /tmp
+git clone https://github.com/OpenBluetoothToolbox/SimpleBLE.git
+cd SimpleBLE && mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j4
+sudo make install
+sudo ldconfig
+
+# Enable camera
+sudo raspi-config nonint do_camera 0
+```
+
+> **Note:** The main issue was missing `nlohmann-json3-dev` package. Use `rpi_setup.sh` for full automated setup.
 
 ### Build & Run (Recommended)
 ```bash
@@ -117,13 +141,26 @@ chmod +x build.sh START.sh
 ./build/VisionBasedRCCarControl
 ```
 
+### Build & Run on Raspberry Pi
+For Raspberry Pi 4 with optimized settings:
+```bash
+# Build the optimized RBP4 version
+chmod +x RBP4/build_rbp4.sh RBP4/run_rbp4.sh
+./RBP4/build_rbp4.sh
+
+# Run with auto-loaded configuration
+./RBP4/run_rbp4.sh
+```
+
+**RBP4 Settings:** 640x480@20fps, optimized for Pi4 performance
+
 ### Manual Build
 ```bash
 mkdir -p build
 cd build
 cmake ..
 make -j4
-./VisionBasedRCCarControl
+./build/VisionBasedRCCarControl
 ```
 
 ### Run (Simulation Mode)
@@ -157,8 +194,13 @@ Edit `Rootconfig/config.json` to set your car's BLE MAC address and adjust param
 - BLE issues: Confirm MAC address, restart car, check Bluetooth adapter
 
 ## Deployment
-- Raspberry Pi: Transfer project, install dependencies, build, update config, run
-- macOS/Linux: Install OpenCV, SimpleBLE, build, configure, run
+- **Raspberry Pi 4:** 
+  - Use pre-installation commands above
+  - Build with `./RBP4/build_rbp4.sh`
+  - Run with `./RBP4/run_rbp4.sh`
+  - Config: `RBP4/config/config_rbp4_ultra_low.json` (640x480@20fps, 20Hz BLE)
+- **macOS/Linux (Development):** Install OpenCV, SimpleBLE, build, configure, run
+- **Other Linux:** Follow Ubuntu/Debian installation, adapt for your package manager
 
 ## License
 Educational and research purposes only.
