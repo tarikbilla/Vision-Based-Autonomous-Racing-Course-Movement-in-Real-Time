@@ -24,7 +24,7 @@
     "tracker_type": "KCF"
   },
   "ui": {
-    "show_window": false,
+    "show_window": true,
     "command_rate_hz": 30,
     "color_tracking": false
   }
