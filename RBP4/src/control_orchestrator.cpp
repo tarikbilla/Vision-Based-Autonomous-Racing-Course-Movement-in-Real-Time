@@ -40,11 +40,6 @@ void ControlOrchestrator::start() {
     
     if (options_.showWindow) {
         selectROI();
-    } else {
-        useMotionDetection_ = true;
-        options_.colorTracking = true;
-        trackerReady_ = true;
-        std::cout << "[*] Headless mode: auto-tracking enabled (motion + color)\n";
     }
     
     cameraThread_ = std::thread(&ControlOrchestrator::cameraLoop, this);
@@ -120,6 +115,16 @@ void ControlOrchestrator::sendStopAndDisconnect() {
 
 void ControlOrchestrator::selectROI() {
     std::cout << "[*] Waiting for first camera frame...\n";
+    
+    // In headless mode, auto-select red car detection
+    if (!options_.showWindow) {
+        std::cout << "[*] Headless mode: auto-enabling red car detection\n";
+        useMotionDetection_ = true;
+        options_.colorTracking = true;
+        trackerReady_ = true;
+        return;
+    }
+    
     std::cout << "[*] Press 's' to select ROI, 'a' for auto red-car tracking, or 'q' to quit." << std::endl;
 
     camera_->open();
@@ -210,7 +215,9 @@ void ControlOrchestrator::selectROI() {
             if (trackerReady_) break;
         }
     }
-    cv::destroyWindow("Camera Live");
+    if (options_.showWindow) {
+        cv::destroyWindow("Camera Live");
+    }
 }
 
 void ControlOrchestrator::cameraLoop() {
@@ -233,7 +240,7 @@ void ControlOrchestrator::cameraLoop() {
             
             {
                 std::lock_guard<std::mutex> lock(frameQueueMutex_);
-                if (frameQueue_.size() < 2) {
+                if (frameQueue_.size() < 5) {
                     frameQueue_.push(frame);
                     frameQueueCV_.notify_one();
                 }
@@ -248,9 +255,9 @@ void ControlOrchestrator::cameraLoop() {
 void ControlOrchestrator::trackingLoop() {
     int frameCount = 0;
     auto lastProcessed = std::chrono::system_clock::now();
-    const auto analysisInterval = std::chrono::milliseconds(125); // ~8 FPS for Raspberry Pi stability
+    const auto analysisInterval = std::chrono::milliseconds(66); // ~15 FPS for better control frequency
     
-    std::cout << "[*] Tracking started at ~8Hz analysis rate.\n";
+    std::cout << "[*] Tracking started at ~15Hz analysis rate.\n";
     
     while (!stopEvent_) {
         if (!trackerReady_) {
@@ -365,8 +372,8 @@ void ControlOrchestrator::trackingLoop() {
 }
 
 void ControlOrchestrator::bleLoop() {
-    int rate_hz = std::max(5, options_.commandRateHz);
-    int interval_ms = std::max(10, 1000 / rate_hz);
+    // Use 50Hz command rate for smoother control (override config)
+    int interval_ms = 20; // 50 commands per second
     
     while (!stopEvent_) {
         auto sendStartTime = std::chrono::high_resolution_clock::now();
@@ -389,9 +396,7 @@ void ControlOrchestrator::bleLoop() {
 }
 
 void ControlOrchestrator::uiLoop() {
-    const int DISPLAY_DELAY = 80; // milliseconds
-    cv::namedWindow("RC Car Autonomous Control", cv::WINDOW_NORMAL);
-    cv::resizeWindow("RC Car Autonomous Control", 320, 240);
+    const int DISPLAY_DELAY = 30; // milliseconds
     
     while (!stopEvent_) {
         cv::Mat frameToDisplay;
@@ -414,8 +419,13 @@ void ControlOrchestrator::uiLoop() {
         
         if (!frameToDisplay.empty()) {
             render(frameToDisplay, trackedToRender, raysToRender);
-            if (cv::waitKey(DISPLAY_DELAY) == 'q') {
-                break;
+            if (options_.showWindow) {
+                if (cv::waitKey(DISPLAY_DELAY) == 'q') {
+                    break;
+                }
+            } else {
+                // In headless mode, just sleep instead of waitKey
+                std::this_thread::sleep_for(std::chrono::milliseconds(DISPLAY_DELAY));
             }
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(DISPLAY_DELAY));
@@ -484,12 +494,11 @@ void ControlOrchestrator::render(const cv::Mat& image, const TrackedObject& trac
         cv::line(display, tracked.center, end, cv::Scalar(255, 0, 255), 2);
     }
 
-    if (display.cols > 320 || display.rows > 240) {
-        cv::resize(display, display, cv::Size(320, 240), 0, 0, cv::INTER_AREA);
+    // Only show window if GUI is enabled
+    if (options_.showWindow) {
+        cv::imshow("RC Car Autonomous Control", display);
+        cv::waitKey(1);
     }
-
-    cv::imshow("RC Car Autonomous Control", display);
-    cv::waitKey(1);
 // End of render function
 }
 

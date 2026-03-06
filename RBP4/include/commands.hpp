@@ -5,7 +5,6 @@
 #include <vector>
 #include <string>
 #include <algorithm>
-#include <string>
 
 struct ControlVector {
     bool light_on;

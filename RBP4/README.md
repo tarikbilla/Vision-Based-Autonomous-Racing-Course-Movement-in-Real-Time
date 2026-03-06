@@ -1,53 +1,225 @@
-# RBP4 (Isolated Raspberry Pi 4 Version)
+# RBP4 (Raspberry Pi 4 Optimized Version)
 
-This folder is a fully separate low-quality build for Raspberry Pi 4.
-It does not modify or depend on your root project build/output.
+This folder contains a fully optimized build for Raspberry Pi 4 with **headless mode support** for running without a display.
 
-## Includes
-- `RBP4/src/` separate source copy
-- `RBP4/include/` separate header copy
-- `RBP4/config/config_rbp4_ultra_low.json` ultra-low runtime config
-- `RBP4/CMakeLists.txt` separate CMake project
-- `RBP4/build_rbp4.sh` separate build script
-- `RBP4/run_rbp4.sh` separate run script
+## 🎯 What's Different
 
-## Ultra-Low Settings
-- Resolution: `320x240`
-- FPS: `8`
-- Tracker: `KCF`
-- UI Window: `on` (fixed small `320x240` preview)
-- BLE command rate: `12Hz`
-- Speed: `10`
-- Forced downscale: every frame is resized to `320x240` even if camera opens at higher resolution
+- **Separate build**: Does not modify root project
+- **Optimized settings**: Lower resolution (640×480 @ 15fps) for RPi performance
+- **Headless support**: Can run without X11/display server
+- **Two run modes**: GUI mode (with display) and headless mode (SSH/remote)
 
-## Build
+## 📁 Structure
+
+```
+RBP4/
+├── src/               # Synced with main project source
+├── include/           # Synced with main project headers
+├── config/
+│   ├── config_rbp4_headless.json  # Headless config (show_window: false)
+│   ├── config_rbp4_gui.json       # GUI config (show_window: true)
+│   └── config_rbp4_ultra_low.json # Legacy ultra-low settings
+├── build/             # Build output directory
+├── CMakeLists.txt     # Separate CMake project
+├── build_rbp4.sh      # Build script
+├── run_rbp4.sh        # Run with GUI (requires display)
+└── run_rbp4_headless.sh  # Run headless (no display needed)
+```
+
+## 🚀 Quick Start
+
+### Option 1: Headless Mode (Recommended for SSH/Remote)
+
+**For Raspberry Pi OS Lite or headless setup:**
+
 ```bash
 cd /path/to/IoT-Project-Vision-based-autonomous-RC-car-control-system
-chmod +x RBP4/build_rbp4.sh RBP4/run_rbp4.sh
+./RBP4/build_rbp4.sh
+./RBP4/run_rbp4_headless.sh
+```
+
+**Features:**
+- ✅ No display required
+- ✅ Works over SSH
+- ✅ Auto red car detection enabled
+- ✅ Lower CPU usage (no GUI rendering)
+- ✅ `show_window: false` in config
+
+### Option 2: GUI Mode (Requires Display)
+
+**For Raspberry Pi with desktop environment:**
+
+```bash
+cd /path/to/IoT-Project-Vision-based-autonomous-RC-car-control-system
+./RBP4/build_rbp4.sh
+./RBP4/run_rbp4.sh
+```
+
+**Features:**
+- ✅ Live visualization window
+- ✅ Shows car detection, boundaries, centerline
+- ✅ Can press 'q' to quit
+- ❌ Requires X11/Wayland display server
+
+## ⚙️ Configuration Files
+
+### config_rbp4_headless.json
+```json
+{
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "fps": 15
+  },
+  "ui": {
+    "show_window": false,  ← No GUI
+    "color_tracking": true  ← Auto detection
+  }
+}
+```
+
+### config_rbp4_gui.json
+```json
+{
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "fps": 15
+  },
+  "ui": {
+    "show_window": true,   ← Enable GUI
+    "color_tracking": true
+  }
+}
+```
+
+## 🔧 Build
+
+```bash
+chmod +x RBP4/build_rbp4.sh RBP4/run_rbp4.sh RBP4/run_rbp4_headless.sh
 ./RBP4/build_rbp4.sh
 ```
 
-## Run (real car)
+## 🏃 Run Options
+
+### Headless (No Display)
+```bash
+./RBP4/run_rbp4_headless.sh
+```
+
+### With GUI
 ```bash
 ./RBP4/run_rbp4.sh
 ```
 
-## Raspberry Pi 4 recommended run sequence
+### Direct Binary Execution
 ```bash
-cd /path/to/IoT-Project-Vision-based-autonomous-RC-car-control-system
+# Headless
+./RBP4/build/VisionBasedRCCarControl_RBP4 --config ./RBP4/config/config_rbp4_headless.json
+
+# GUI
+./RBP4/build/VisionBasedRCCarControl_RBP4 --config ./RBP4/config/config_rbp4_gui.json
+```
+
+## 🐛 Troubleshooting
+
+### Error: "could not connect to display"
+**Problem:** Running GUI version without X11 display
+
+**Solution:** Use headless mode instead:
+```bash
+./RBP4/run_rbp4_headless.sh
+```
+
+### Error: "Qt platform plugin could not be initialized"
+**Problem:** Qt trying to use GUI on headless system
+
+**Solution:** The headless script sets `QT_QPA_PLATFORM=offscreen` automatically, but you can also:
+```bash
+export QT_QPA_PLATFORM=offscreen
+./RBP4/build/VisionBasedRCCarControl_RBP4 --config ./RBP4/config/config_rbp4_headless.json
+```
+
+### Camera Not Opening
+**Problem:** Camera index incorrect or permissions
+
+**Solution:**
+```bash
+# List video devices
+ls -l /dev/video*
+
+# Give camera permissions
+sudo usermod -a -G video $USER
+
+# Edit config camera index if needed
+nano RBP4/config/config_rbp4_headless.json
+```
+
+## 📊 Performance Settings
+
+| Setting | Headless | GUI | Notes |
+|---------|----------|-----|-------|
+| Resolution | 640×480 | 640×480 | Lower than main (1280×720) |
+| FPS | 15 | 15 | Optimized for RPi4 |
+| Tracker | KCF | KCF | Faster than CSRT |
+| BLE Rate | 30Hz | 30Hz | Lower than main (50Hz) |
+| Show Window | ❌ | ✅ | Headless saves CPU |
+| Auto Detection | ✅ | ✅ | Enabled by default |
+
+## 🔄 Syncing with Main Project
+
+RBP4 code is synced with main project. To update:
+
+```bash
+# Sync source files
+rsync -av src/ RBP4/src/
+rsync -av include/ RBP4/include/
+
+# Rebuild
 ./RBP4/build_rbp4.sh
-./RBP4/build/VisionBasedRCCarControl_RBP4 --config ./RBP4/config/config_rbp4_ultra_low.json
 ```
 
-## Run (simulation)
+## 📝 Recommended Raspberry Pi Setup
+
+### For Headless Operation
 ```bash
-./RBP4/run_rbp4.sh --simulate
+# 1. Install Raspberry Pi OS Lite (no desktop)
+# 2. Enable camera
+sudo raspi-config
+# Interface Options -> Camera -> Enable
+
+# 3. Install dependencies
+sudo apt update
+sudo apt install -y cmake build-essential pkg-config \
+    libopencv-dev bluetooth libbluetooth-dev
+
+# 4. Build and run
+git clone <your-repo>
+cd IoT-Project-Vision-based-autonomous-RC-car-control-system
+./RBP4/build_rbp4.sh
+./RBP4/run_rbp4_headless.sh
 ```
 
-## Run direct binary (important)
-```bash
-./RBP4/build/VisionBasedRCCarControl_RBP4 --config ./RBP4/config/config_rbp4_ultra_low.json
-```
+## 🎮 Controls
+
+### Headless Mode
+- **Start:** `./RBP4/run_rbp4_headless.sh`
+- **Stop:** Press `Ctrl+C` (sends STOP commands to car)
+- **No keyboard input needed** - auto detection enabled
+
+### GUI Mode
+- **Start:** `./RBP4/run_rbp4.sh`
+- **Stop:** Press `q` in window or `Ctrl+C`
+- **Select ROI:** Press `s` (manual tracking)
+- **Auto detect:** Press `a` (color detection)
+
+## 📌 Notes
+
+- Headless mode automatically enables red car color detection
+- No user input required in headless mode - just start and go
+- BLE MAC address can be configured in config files
+- All settings are JSON-based, no hardcoding
+
 
 ## Run direct binary (simulation)
 ```bash

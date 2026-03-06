@@ -63,12 +63,6 @@ void CameraCapture::open() {
     cap_.set(cv::CAP_PROP_FRAME_WIDTH, width_);
     cap_.set(cv::CAP_PROP_FRAME_HEIGHT, height_);
     cap_.set(cv::CAP_PROP_FPS, fps_);
-
-    double actualW = cap_.get(cv::CAP_PROP_FRAME_WIDTH);
-    double actualH = cap_.get(cv::CAP_PROP_FRAME_HEIGHT);
-    double actualFps = cap_.get(cv::CAP_PROP_FPS);
-    std::cout << "[*] Camera requested: " << width_ << "x" << height_ << " @ " << fps_ << " FPS\n";
-    std::cout << "[*] Camera reported: " << (int)actualW << "x" << (int)actualH << " @ " << (int)actualFps << " FPS\n";
     
     // Warmup and verify at least one frame can be grabbed. If not, try a
     // GStreamer pipeline fallback (useful for some USB capture devices
@@ -141,10 +135,6 @@ bool CameraCapture::getFrame(Frame& frame) {
         return false;
     }
     
-    if (mat.cols != width_ || mat.rows != height_) {
-        cv::resize(mat, mat, cv::Size(width_, height_), 0, 0, cv::INTER_AREA);
-    }
-
     frame.image = mat;
     frame.timestamp = std::chrono::system_clock::now().time_since_epoch().count() / 1e9;
     return true;

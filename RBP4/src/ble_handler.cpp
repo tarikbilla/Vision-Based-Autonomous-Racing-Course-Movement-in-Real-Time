@@ -296,21 +296,16 @@ bool RealBLEClient::sendControl(const ControlVector& control) {
     try {
         Peripheral* peripheral = static_cast<Peripheral*>(platformData_);
         auto command_bytes = Commands::buildCommand(target_.device_identifier, control);
-        static unsigned long long writeCounter = 0;
-        ++writeCounter;
-        bool logThisWrite = (writeCounter <= 5) || (writeCounter % 50 == 0);
 
         // Log hex BEFORE attempting write so we see it even if write fails
-        if (logThisWrite) {
-            std::ostringstream hexout;
-            hexout << std::hex << std::setfill('0');
-            for (auto b : command_bytes) {
-                hexout << std::setw(2) << static_cast<int>(b);
-            }
-            std::cout << "[*] BLE -> write (hex): " << hexout.str() << " (bytes: " << command_bytes.size() << ")\n";
-            std::cout << "[*] Service UUID: " << service_uuid_ << "\n";
-            std::cout << "[*] Char UUID: " << char_uuid_ << "\n";
+        std::ostringstream hexout;
+        hexout << std::hex << std::setfill('0');
+        for (auto b : command_bytes) {
+            hexout << std::setw(2) << static_cast<int>(b);
         }
+        std::cout << "[*] BLE -> write (hex): " << hexout.str() << " (bytes: " << command_bytes.size() << ")\n";
+        std::cout << "[*] Service UUID: " << service_uuid_ << "\n";
+        std::cout << "[*] Char UUID: " << char_uuid_ << "\n";
 
         SimpleBLE::ByteArray data(command_bytes.begin(), command_bytes.end());
 
@@ -318,13 +313,9 @@ bool RealBLEClient::sendControl(const ControlVector& control) {
         bool wrote = false;
         std::string last_error;
         try {
-            if (logThisWrite) {
-                std::cout << "[*] Attempting write_command...\n";
-            }
+            std::cout << "[*] Attempting write_command...\n";
             peripheral->write_command(service_uuid_, char_uuid_, data);
-            if (logThisWrite) {
-                std::cout << "[✓] write_command succeeded\n";
-            }
+            std::cout << "[✓] write_command succeeded\n";
             wrote = true;
         } catch (const std::exception& e) {
             last_error = std::string(e.what());
