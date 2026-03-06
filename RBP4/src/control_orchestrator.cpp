@@ -122,10 +122,11 @@ void ControlOrchestrator::selectROI() {
         std::cout << "[*] Press 'q' then Enter to quit.\n";
 
         while (!stopEvent_) {
-            std::cout << "[headless] command> ";
+            std::cout << "[headless] command> " << std::flush;
             std::string input;
             if (!std::getline(std::cin, input)) {
-                throw std::runtime_error("Failed to read terminal input in headless mode");
+                std::cout << "\n[!] No interactive terminal input detected. Auto-starting headless detection.\n";
+                break;
             }
 
             if (input.empty()) {
@@ -367,31 +368,32 @@ void ControlOrchestrator::trackingLoop() {
             
             latestHeading_ = boundary_->headingFromMovement(tracked.movement);
 
-            if (frameCount % 45 == 0) { // Log every 3 seconds at 15Hz
-                std::cout << "[" << detectionMethod << "] [" << frameCount << "] "
-                         << "Car: (" << tracked.center.x << "," << tracked.center.y << ") | "
-                         << "Speed: " << control.speed << " | "
-                         << "L:" << control.left_turn_value << " R:" << control.right_turn_value;
+            // VERBOSE: Log EVERY detection for debugging
+            std::cout << "[" << detectionMethod << "] [" << frameCount << "] "
+                     << "Car: (" << tracked.center.x << "," << tracked.center.y << ") | "
+                     << "Speed: " << control.speed << " | "
+                     << "L:" << control.left_turn_value << " R:" << control.right_turn_value;
 
-                if (rays.size() >= 3) {
-                    std::cout << " | Rays: L=" << rays[0].distance
-                              << " C=" << rays[1].distance
-                              << " R=" << rays[2].distance;
-                }
-
-                // Show path center if detected
-                auto [left, center, right, mask] = boundary_->detectRoadEdges(frame.image);
-                if (center != -1) {
-                    int offset = tracked.center.x - center;
-                    std::cout << " | Path: C=" << center << " Offset=" << offset;
-                }
-                std::cout << "\n";
+            if (rays.size() >= 3) {
+                std::cout << " | Rays: L=" << rays[0].distance
+                          << " C=" << rays[1].distance
+                          << " R=" << rays[2].distance;
             }
+
+            // Show path center if detected
+            auto [left, center, right, mask] = boundary_->detectRoadEdges(frame.image);
+            if (center != -1) {
+                int offset = tracked.center.x - center;
+                std::cout << " | Path: C=" << center << " Offset=" << offset;
+            }
+            std::cout << std::endl;
         } else {
             // No detection - stop car for safety
-            if (frameCount % 30 == 0) {
-                std::cout << "[!] Car not detected - STOPPING\n";
-            }
+            // VERBOSE: Log EVERY failed detection
+            std::cout << "[FAIL] [" << frameCount << "] Car not detected - STOPPING (motion:" 
+                     << (useMotionDetection_ ? "Y" : "N") 
+                     << " color:" << (options_.colorTracking ? "Y" : "N") 
+                     << " warmup:" << (frameCount > warmupFrames_ ? "done" : "wait") << ")\n";
             latestControl_ = ControlVector(true, 0, 0, 0);
         }
     }

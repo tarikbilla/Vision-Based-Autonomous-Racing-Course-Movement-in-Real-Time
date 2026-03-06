@@ -56,7 +56,7 @@ cd /path/to/IoT-Project-Vision-based-autonomous-RC-car-control-system
 **Features:**
 - ✅ No display required
 - ✅ Works over SSH
-- ✅ Auto red car detection enabled
+- ✅ Press `a` then Enter to start auto red car detection
 - ✅ Lower CPU usage (no GUI rendering)
 - ✅ `show_window: false` in config
 
@@ -219,8 +219,9 @@ cd IoT-Project-Vision-based-autonomous-RC-car-control-system
 
 ### Headless Mode
 - **Start:** `./RBP4/run_rbp4_headless.sh`
+- **After BLE connects:** Press `a` then Enter to start auto detection
 - **Stop:** Press `Ctrl+C` (sends STOP commands to car)
-- **No keyboard input needed** - auto detection enabled
+- If terminal input is not available, headless mode auto-starts detection
 
 ### GUI Mode
 - **Start:** `./RBP4/run_rbp4.sh`
@@ -230,10 +231,69 @@ cd IoT-Project-Vision-based-autonomous-RC-car-control-system
 
 ## 📌 Notes
 
-- Headless mode automatically enables red car color detection
-- No user input required in headless mode - just start and go
+- Headless mode uses no camera feed window (`show_window: false`)
+- Press `a` then Enter to start detection after connection (or auto-start if no terminal input)
 - BLE MAC address can be configured in config files
 - All settings are JSON-based, no hardcoding
+
+## 🔍 Understanding the Output
+
+When you run headless mode, you'll see detection feedback:
+
+### Good Detection (Car Found):
+```
+[MOTION] [45] Car: (320,240) | Speed: 15 | L:0 R:15 | Rays: L=120 C=200 R=180
+[COLOR] [46] Car: (325,238) | Speed: 12 | L:5 R:0 | Rays: L=115 C=195 R=185
+```
+- **MOTION/COLOR**: Detection method used
+- **Car: (x,y)**: Car position in frame
+- **Speed**: Forward speed (0-15)
+- **L/R**: Left/Right turn values
+- **Rays**: Distance to boundaries
+
+### Failed Detection (Car Not Found):
+```
+[FAIL] [47] Car not detected - STOPPING (motion:Y color:Y warmup:done)
+```
+- **FAIL**: No car detected
+- **STOPPING**: Car receives stop command for safety
+- **motion:Y/N**: Motion detection enabled?
+- **color:Y/N**: Color detection enabled?
+- **warmup:done/wait**: System warm-up status
+
+### What the BLE commands mean:
+```
+[*] BLE -> write (hex): bf0a00082800000f00000000020000
+                                   ^^^^^^^^^^^^
+                                   Speed: 0x0f (15)
+                                       Left: 0x00 (straight)
+                                           Right: 0x00 (straight)
+```
+
+### Troubleshooting Detection Issues:
+
+**If you see many `[FAIL]` messages:**
+
+1. **Check lighting** - Red car detection needs good lighting
+2. **Check camera angle** - Car should be clearly visible
+3. **Verify red color** - Camera must see red surface of car
+4. **Motion detection warmup** - First 30 frames are for initialization
+
+**Commands to adjust if detection fails:**
+
+Edit `RBP4/config/config_rbp4_headless.json`:
+```json
+{
+  "detection": {
+    "red_car": {
+      "hue_min": 0,      // Lower = more red colors
+      "hue_max": 10,     // Raise if car appears orange
+      "sat_min": 100,    // Lower if color is washed out
+      "val_min": 100     // Lower for darker environments
+    }
+  }
+}
+```
 
 
 ## Run direct binary (simulation)

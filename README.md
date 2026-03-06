@@ -199,9 +199,12 @@ Edit `Rootconfig/config.json` to set your car's BLE MAC address and adjust param
    - Build (one-time): `./RBP4/build_rbp4.sh`
    - Headless mode (no UI / no camera feed): `./RBP4/run_rbp4_headless.sh`
       - After BLE connection, press `a` then Enter to start automatic detection and run
+      - Watch for `[MOTION]` or `[COLOR]` logs = car detected ✅
+      - Watch for `[FAIL]` logs = car NOT detected ❌ (check lighting, angle, red color visibility)
       - Stop with `Ctrl+C`
    - GUI mode (camera feed visible): `./RBP4/run_rbp4.sh`
       - Press `a` for auto detection, `s` for ROI select, `q` to quit
+   - **Troubleshooting:** See `RBP4/README.md` section "Understanding the Output" for detection diagnostics
    - Headless config: `RBP4/config/config_rbp4_headless.json` (`show_window: false`)
    - GUI config: `RBP4/config/config_rbp4_gui.json` (`show_window: true`)
 - **macOS/Linux (Development):** Install OpenCV, SimpleBLE, build, configure, run
