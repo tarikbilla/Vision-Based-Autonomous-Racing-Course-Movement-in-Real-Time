@@ -131,32 +131,43 @@ void ControlOrchestrator::selectROI() {
             continue;
         }
 
-        cv::imshow("Camera Live", frame.image);
-        int key = cv::waitKey(1);
-        if (key == 'q') {
-            throw std::runtime_error("User requested quit during ROI selection");
-        }
-        if (key == 'a') {
-            // Auto detect red car immediately
-            std::cout << "[*] Auto-detecting red car..." << std::endl;
-            TrackedObject initialCar;
-            bool detected = detectRedCarInitial(frame.image, initialCar);
-            if (detected) {
-                std::cout << "[✓] Red car detected at (" << initialCar.center.x << "," << initialCar.center.y << ")" << std::endl;
-                lastCenter_ = initialCar.center;
-            } else {
-                std::cout << "[!] Red car not found. Make sure car is visible and on track." << std::endl;
+        if (showWindow_) {
+            cv::imshow("Camera Live", frame.image);
+            int key = cv::waitKey(1);
+            if (key == 'q') {
+                throw std::runtime_error("User requested quit during ROI selection");
             }
-            // Always run robust candidate picking after 'a'
-            // (matches controller.cpp logic)
-            // Optionally: run motion detection fallback
-            useMotionDetection_ = true;
-            options_.colorTracking = true;
-            trackerReady_ = true;
+            if (key == 'a') {
+                // Auto detect red car immediately
+                std::cout << "[*] Auto-detecting red car..." << std::endl;
+                TrackedObject initialCar;
+                bool detected = detectRedCarInitial(frame.image, initialCar);
+                if (detected) {
+                    std::cout << "[✓] Red car detected at (" << initialCar.center.x << "," << initialCar.center.y << ")" << std::endl;
+                    lastCenter_ = initialCar.center;
+                } else {
+                    std::cout << "[!] Red car not found. Make sure car is visible and on track." << std::endl;
+                }
+                // Always run robust candidate picking after 'a'
+                // (matches controller.cpp logic)
+                // Optionally: run motion detection fallback
+                useMotionDetection_ = true;
+                options_.colorTracking = true;
+                trackerReady_ = true;
+        } else {
+            // Headless mode: auto-enable tracking immediately
+            if (!trackerReady_) {
+                std::cout << "[*] Headless mode: Enabling auto car tracking..." << std::endl;
+                useMotionDetection_ = true;
+                options_.colorTracking = true;
+                trackerReady_ = true;
+            }
+        }
+        if (trackerReady_) {
             std::cout << "[✓] Tracking enabled. Starting autonomous control..." << std::endl;
             break;
         }
-        if (key == 's') {
+        if (showWindow_ && key == 's') {
             cv::Mat frozen = frame.image.clone();
             cv::imshow("ROI Select", frozen);
             cv::waitKey(1);
@@ -390,8 +401,10 @@ void ControlOrchestrator::bleLoop() {
 
 void ControlOrchestrator::uiLoop() {
     const int DISPLAY_DELAY = 80; // milliseconds
-    cv::namedWindow("RC Car Autonomous Control", cv::WINDOW_NORMAL);
-    cv::resizeWindow("RC Car Autonomous Control", 320, 240);
+    if (showWindow_) {
+        cv::namedWindow("RC Car Autonomous Control", cv::WINDOW_NORMAL);
+        cv::resizeWindow("RC Car Autonomous Control", 320, 240);
+    }
     
     while (!stopEvent_) {
         cv::Mat frameToDisplay;
@@ -488,8 +501,10 @@ void ControlOrchestrator::render(const cv::Mat& image, const TrackedObject& trac
         cv::resize(display, display, cv::Size(320, 240), 0, 0, cv::INTER_AREA);
     }
 
-    cv::imshow("RC Car Autonomous Control", display);
-    cv::waitKey(1);
+    if (showWindow_) {
+        cv::imshow("RC Car Autonomous Control", display);
+        cv::waitKey(1);
+    }
 // End of render function
 }
 
