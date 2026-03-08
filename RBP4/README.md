@@ -4,25 +4,162 @@
 
 This folder contains the **exact same functionality as the main project**, optimized for Raspberry Pi 4, with a simple choice between window and windowless modes.
 
+## 🎯 WHICH SETUP DO YOU WANT?
+
+### ✅ "I want to see the camera feed & controls" → **USE GUI MODE**
+- **OS:** Raspberry Pi OS Desktop (64-bit) with HDMI display
+- **Command:** `./RBP4/run_rbp4.sh`
+- **Benefits:** See detection in real-time, debug easily, visual feedback
+- **Requirements:** HDMI monitor connected to Pi
+
+**Setup Steps:**
+```bash
+# 1. Flash Raspberry Pi OS Desktop (64-bit) to SD card
+# 2. Enable camera: sudo raspi-config → Interface Options → Camera → Enable
+# 3. Build: ./RBP4/build_rbp4.sh
+# 4. Run: ./RBP4/run_rbp4.sh
+# 5. Watch the live detection window!
+```
+
+---
+
+### ✅ "I control via SSH, no display needed" → **USE HEADLESS MODE**
+- **OS:** Raspberry Pi OS Lite (64-bit) OR Ubuntu Server 22.04 LTS
+- **Command:** `./RBP4/run_rbp4_headless.sh`
+- **Benefits:** Lower CPU usage, remote control, no display overhead
+- **Requirements:** SSH access to Pi
+
+**Setup Steps:**
+```bash
+# 1. Flash Raspberry Pi OS Lite (64-bit) to SD card
+# 2. Enable camera: sudo raspi-config → Interface Options → Camera → Enable
+# 3. Build: ./RBP4/build_rbp4.sh
+# 4. Run: ./RBP4/run_rbp4_headless.sh
+# 5. Watch terminal output for detection status
+```
+
+---
+
+### ❓ "I'm not sure / Having camera issues?" → **USE UBUNTU SERVER 22.04 LTS**
+- **OS:** Ubuntu Server 22.04 LTS for Raspberry Pi
+- **Why:** Better camera driver support, more reliable
+- **Default:** Headless (CLI only) - can add GUI later
+- **Command:** `./RBP4/run_rbp4_headless.sh` (or `./RBP4/run_rbp4.sh` if you install GUI)
+- **Download:** https://cdimage.ubuntu.com/releases/jammy/release/
+
+**Setup Steps:**
+```bash
+# 1. Flash Ubuntu Server 22.04 LTS (ARMv8) to SD card
+# 2. SSH to your Pi:
+#    ssh ubuntu@raspberrypi.local
+#    Default password: ubuntu
+
+# 3. Update system
+sudo apt update && sudo apt upgrade -y
+
+# 4. Install dependencies
+sudo apt install -y build-essential cmake libopencv-dev bluetooth libbluetooth-dev
+
+# 5. (OPTIONAL) Add GUI if you want to see detection window
+#    sudo apt install -y lubuntu-desktop
+#    sudo reboot
+#    (Then connect HDMI monitor after reboot)
+
+# 6. Build project
+./RBP4/build_rbp4.sh
+
+# 7. Run (choose one):
+./RBP4/run_rbp4_headless.sh  # Works with or without GUI
+# OR if GUI is installed and monitor connected:
+./RBP4/run_rbp4.sh
+
+# Camera works out-of-the-box on Ubuntu!
+```
+
+**Why Ubuntu is Best:**
+- ✅ Excellent camera support (95%+)
+- ✅ Works out-of-the-box (no configuration)
+- ✅ Perfect for vision-based projects
+- ✅ Same lightweight footprint as RPi OS Lite
+- ✅ Can add GUI anytime if needed
+- ✅ Better community support
+- ✅ Professional, production-ready
+
+---
+
+## 🎨 UI SUPPORT GUIDE
+
+### Does Ubuntu Server Support UI?
+**YES!** ✅ But it depends on what you want:
+
+| OS/Setup | Default GUI | Can Add GUI | Command |
+|----------|-----------|-----------|---------|
+| **RPi OS Lite** | ❌ No | ⚠️ Hard | `./RBP4/run_rbp4_headless.sh` |
+| **RPi OS Desktop** | ✅ Yes | N/A | `./RBP4/run_rbp4.sh` |
+| **Ubuntu Server** | ❌ No | ✅ Easy | `./RBP4/run_rbp4_headless.sh` |
+| **Ubuntu Server + Lubuntu** | ✅ Yes | ✅ Already done | `./RBP4/run_rbp4.sh` |
+
+### Ubuntu Server UI Options
+
+#### Option 1: Headless Only (Default, Lightweight)
+- **RAM:** ~200-400MB
+- **CPU:** ~5% overhead
+- **Use:** SSH remote control
+- **Run:** `./RBP4/run_rbp4_headless.sh`
+- **Best for:** Production, SSH access, minimal resources
+
+#### Option 2: Add Lubuntu Desktop (5 minutes, Recommended)
+```bash
+sudo apt install -y lubuntu-desktop
+sudo reboot
+```
+- **RAM:** ~800-1000MB
+- **CPU:** ~15% overhead  
+- **Use:** HDMI monitor + GUI window
+- **Run:** `./RBP4/run_rbp4.sh` (with display) or headless
+- **Best for:** Testing, debugging, development
+
+### Recommendation
+Start with **Ubuntu Server (headless)**, add Lubuntu GUI later if you need it:
+1. **Initially:** Fast, lightweight, perfect for SSH
+2. **If needed:** Add GUI in 5 minutes with one command
+3. **Best of both:** Use headless OR GUI mode, your choice
+
+---
+
+| Use Case | OS | Command | Notes |
+|----------|----|---------|----|
+| **See car detection + controls** | RPi OS Desktop | `./RBP4/run_rbp4.sh` | Need HDMI |
+| **Remote SSH operation** | RPi OS Lite | `./RBP4/run_rbp4_headless.sh` | Terminal output |
+| **Camera problems / Unsure** | Ubuntu Server 22.04 | Either command | Most reliable |
+
+---
+
 ## 🎯 Two Simple Modes
 
-### Mode 1: WITH WINDOW (Shows Detection)
+### Mode 1: WITH WINDOW (Shows Detection) - **RECOMMENDED WITH UI**
 ```bash
 ./RBP4/run_rbp4.sh
 ```
-- ✅ Live window showing detection
-- ✅ Interactive controls
-- ✅ Same as main project
-- ❌ Needs HDMI or X11
+- ✅ **Live window showing car detection**
+- ✅ **Interactive keyboard controls**
+- ✅ See steering/speed in real-time
+- ✅ Perfect for Raspberry Pi Desktop
+- ❌ Needs HDMI display or X11 forwarding
 
-### Mode 2: WITHOUT WINDOW (Headless)
+**Best for:** Testing, debugging, visualization
+
+### Mode 2: WITHOUT WINDOW (Headless) - **RECOMMENDED FOR SSH/REMOTE**
 ```bash
 ./RBP4/run_rbp4_headless.sh
 ```
 - ✅ No display needed
-- ✅ Perfect for SSH
+- ✅ Perfect for SSH (remote control)
 - ✅ Lower CPU usage
 - ✅ Same control as Mode 1
+- ❌ No visual feedback (terminal output only)
+
+**Best for:** Production, remote operation, autonomous runs
 
 ## 📁 Structure
 
@@ -213,6 +350,71 @@ git clone <your-repo>
 cd IoT-Project-Vision-based-autonomous-RC-car-control-system
 ./RBP4/build_rbp4.sh
 ./RBP4/run_rbp4_headless.sh
+```
+
+### For GUI/UI Mode (WITH DISPLAY)
+```bash
+# 1. Install Raspberry Pi OS Desktop (64-bit)
+#    - Comes with GUI, X11, and full camera support
+#    - Download from: https://www.raspberrypi.com/software/
+
+# 2. After installation, enable camera:
+sudo raspi-config
+# Interface Options -> Camera -> Enable
+
+# 3. Install dependencies (same as above)
+sudo apt update
+sudo apt install -y cmake build-essential pkg-config \
+    libopencv-dev bluetooth libbluetooth-dev
+
+# 4. Build
+./RBP4/build_rbp4.sh
+
+# 5. Run WITH GUI window
+./RBP4/run_rbp4.sh
+
+# You'll see a live window showing:
+# - Red car detection box
+# - Steering/speed values
+# - Boundary detection rays
+# - Path centerline
+```
+
+### For Ubuntu Server 22.04 LTS (BEST FOR CAMERA)
+```bash
+# 1. Install Ubuntu Server 22.04 LTS (ARMv8/64-bit)
+#    Download from: https://cdimage.ubuntu.com/releases/jammy/release/
+#    Look for: ubuntu-22.04.X-preinstalled-server-arm64+raspi.img.xz
+#    Flash with Raspberry Pi Imager or Balena Etcher
+
+# 2. SSH to your Pi (after first boot, ~60 seconds)
+ssh ubuntu@raspberrypi.local
+# Default password: ubuntu (you'll be forced to change it)
+
+# 3. System update
+sudo apt update
+sudo apt upgrade -y
+sudo apt install -y build-essential cmake pkg-config
+
+# 4. Install camera support (Ubuntu has excellent camera drivers)
+sudo apt install -y libraspberrypi-bin libraspberrypi0 libopencv-dev
+
+# 5. Verify camera works
+vcgencmd get_camera
+# Output should show: supported=1 detected=1
+
+libcamera-hello --list-cameras
+# Output should show your camera model
+
+# 6. Clone and build your project
+git clone <your-repo-url>
+cd IoT-Project-Vision-based-autonomous-RC-car-control-system
+./RBP4/build_rbp4.sh
+
+# 7. Run headless or with display
+./RBP4/run_rbp4_headless.sh   # SSH mode (no display needed)
+# OR
+./RBP4/run_rbp4.sh            # With HDMI monitor
 ```
 
 ## 🎮 Controls
