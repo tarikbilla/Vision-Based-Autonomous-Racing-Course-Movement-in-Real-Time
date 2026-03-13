@@ -2071,101 +2071,201 @@ std::optional<Args> parse_args(int argc, char** argv) {
 }
 
 #ifdef __linux__
-// ── Native Linux BLE client via BlueZ (bluetoothctl + gatttool) ─────────────
-// Works on Raspberry Pi 4 with BlueZ installed (apt install bluez).
-// gatttool is used for GATT characteristic writes.
-// bluetoothctl is used for scanning / discovery.
+// ── Native Linux BLE client via BlueZ D-Bus / bluetoothctl ──────────────────
+// Uses bluetoothctl (BlueZ 5.50+) for scan, connect, and GATT writes.
+// Requires: sudo apt install bluez
+// No gatttool needed (deprecated in modern BlueZ).
+//
+// Strategy:
+//  - Scan: pipe commands into bluetoothctl via popen in write mode
+//  - Connect: bluetoothctl connect <MAC>
+//  - GATT write: bluetoothctl select-attribute + write  (interactive pipe)
+//
+// For GATT writes we keep a persistent bluetoothctl process and pipe
+// commands to it via popen("bluetoothctl", "w").
 
-std::string run_cmd_capture(const std::string& cmd) {
+#include <sys/wait.h>
+
+// Run a shell command, return captured stdout.
+static std::string run_capture(const std::string& cmd) {
     FILE* fp = popen(cmd.c_str(), "r");
     if (!fp) return {};
     std::string out;
     char buf[256];
-    while (fgets(buf, sizeof(buf), fp)) {
-        out += buf;
-    }
+    while (fgets(buf, sizeof(buf), fp)) out += buf;
     pclose(fp);
     return out;
 }
 
-// Resolve device name → MAC address by scanning with bluetoothctl.
-std::string resolve_ble_name_to_mac(const std::string& name, int scan_timeout_sec) {
-    std::cout << "[BLE] Scanning for '" << name << "' (" << scan_timeout_sec << "s)...\n";
-    // Start a scan via bluetoothctl, wait, then list devices.
-    std::string scan_cmd =
-        "bluetoothctl -- scan on & sleep " + std::to_string(scan_timeout_sec) +
-        " ; bluetoothctl -- devices 2>/dev/null";
-    std::string output = run_cmd_capture(scan_cmd);
-    // Parse lines: "Device AA:BB:CC:DD:EE:FF DeviceName"
-    std::istringstream ss(output);
+// Send a sequence of newline-separated commands to bluetoothctl via stdin pipe,
+// wait ms milliseconds, collect output.
+static std::string btctl_pipe(const std::string& commands, int wait_ms = 2000) {
+    // Write commands to a temp script and run bluetoothctl in batch mode
+    // bluetoothctl supports reading commands from stdin when run non-interactively
+    std::string script = "printf '" + commands + "\\n' | bluetoothctl 2>&1";
+    // Add a sleep so the adapter has time to respond
+    std::string full = "( " + script + " ) & BG=$! ; sleep " +
+                       std::to_string(wait_ms / 1000.0) + " ; wait $BG 2>/dev/null";
+    return run_capture(full);
+}
+
+// Scan for BLE devices and resolve a device name to its MAC address.
+// Returns MAC string like "AA:BB:CC:DD:EE:FF" or empty string on failure.
+static std::string resolve_name_to_mac(const std::string& name, int timeout_sec) {
+    std::cout << "[BLE] Scanning for '" << name << "' (" << timeout_sec << "s)...\n";
+    std::flush(std::cout);
+
+    // Use bluetoothctl in scan mode: power on, scan on, wait, devices, scan off
+    std::string cmd =
+        "bluetoothctl power on >/dev/null 2>&1 ; "
+        "bluetoothctl scan on >/dev/null 2>&1 & "
+        "sleep " + std::to_string(timeout_sec) + " ; "
+        "bluetoothctl scan off >/dev/null 2>&1 ; "
+        "bluetoothctl devices 2>/dev/null";
+    std::string output = run_capture(cmd);
+
+    // Strip ANSI escape codes (bluetoothctl sometimes emits colour codes)
+    std::string clean;
+    clean.reserve(output.size());
+    for (size_t i = 0; i < output.size(); ) {
+        if (output[i] == '\x1b' && i + 1 < output.size() && output[i+1] == '[') {
+            i += 2;
+            while (i < output.size() && output[i] != 'm') ++i;
+            if (i < output.size()) ++i;
+        } else {
+            clean += output[i++];
+        }
+    }
+
+    std::istringstream ss(clean);
     std::string line;
     while (std::getline(ss, line)) {
         if (line.find(name) != std::string::npos) {
-            // Extract MAC (second token)
+            // Line format: "Device AA:BB:CC:DD:EE:FF Name"
             std::istringstream ls(line);
             std::string tok;
-            ls >> tok; // "Device"
-            ls >> tok; // MAC
-            if (tok.size() == 17) { // AA:BB:CC:DD:EE:FF
-                std::cout << "[BLE] Resolved '" << name << "' -> " << tok << "\n";
-                return tok;
+            ls >> tok; // "Device" or "[NEW]" "Device"
+            if (tok == "[NEW]" || tok == "[CHG]") ls >> tok; // skip prefix
+            if (tok == "Device") {
+                ls >> tok; // MAC
+                if (tok.size() == 17 && tok[2] == ':') {
+                    std::cout << "[BLE] Resolved '" << name << "' -> " << tok << "\n";
+                    return tok;
+                }
             }
         }
     }
+    std::cerr << "[BLE] Device '" << name << "' not found during scan.\n";
+    std::cerr << "[BLE] Raw output:\n" << clean << "\n";
     return {};
 }
 
-void ble_discover(int scan_timeout_sec) {
-    std::cout << "[BLE] Scanning " << scan_timeout_sec << "s for BLE devices...\n";
+// Discover all nearby BLE devices and print them.
+static void ble_discover(int timeout_sec) {
+    std::cout << "[BLE] Scanning " << timeout_sec << "s for BLE devices...\n";
+    std::flush(std::cout);
     std::string cmd =
-        "bluetoothctl -- scan on & sleep " + std::to_string(scan_timeout_sec) +
-        " ; bluetoothctl -- devices 2>/dev/null";
-    std::string out = run_cmd_capture(cmd);
+        "bluetoothctl power on >/dev/null 2>&1 ; "
+        "bluetoothctl scan on >/dev/null 2>&1 & "
+        "sleep " + std::to_string(timeout_sec) + " ; "
+        "bluetoothctl scan off >/dev/null 2>&1 ; "
+        "bluetoothctl devices 2>/dev/null";
+    std::string out = run_capture(cmd);
     std::cout << "[BLE] Devices found:\n" << out << "\n";
 }
 
+// ── LinuxBleClient ────────────────────────────────────────────────────────────
+// Connects to a BLE peripheral by MAC address using bluetoothctl,
+// then writes GATT characteristics using bluetoothctl select-attribute + write.
+
 class LinuxBleClient final : public BleClient {
   public:
-    explicit LinuxBleClient(std::string mac) : mac_(std::move(mac)) {}
+    explicit LinuxBleClient(std::string mac, std::string write_uuid)
+        : mac_(std::move(mac)), write_uuid_(std::move(write_uuid)) {}
+
+    ~LinuxBleClient() override {
+        if (pipe_) { pclose(pipe_); pipe_ = nullptr; }
+    }
 
     bool connect() {
+        // 1. Power on adapter
+        system("bluetoothctl power on >/dev/null 2>&1");
+
+        // 2. Pair/trust if not already (best-effort)
+        std::string trust_cmd = "bluetoothctl trust " + mac_ + " >/dev/null 2>&1";
+        system(trust_cmd.c_str());
+
+        // 3. Connect
         std::cout << "[BLE] Connecting to " << mac_ << " ...\n";
-        // bluetoothctl connect blocks until connected or fails
-        std::string cmd = "bluetoothctl -- connect " + mac_ + " 2>&1";
-        std::string out = run_cmd_capture(cmd);
+        std::flush(std::cout);
+        std::string cmd = "bluetoothctl connect " + mac_ + " 2>&1";
+        std::string out = run_capture(cmd);
         std::cout << "[BLE] " << out;
-        connected_ = (out.find("Connection successful") != std::string::npos ||
-                      out.find("Connected") != std::string::npos ||
-                      out.find("already connected") != std::string::npos);
-        if (connected_) {
-            std::cout << "[BLE] Connected!\n";
-        } else {
-            std::cerr << "[BLE] Connection failed.\n";
+
+        bool ok = out.find("Connection successful") != std::string::npos ||
+                  out.find("Connected: yes") != std::string::npos ||
+                  out.find("already connected") != std::string::npos;
+        if (!ok) {
+            // Try a second time — BLE devices sometimes need a retry
+            std::this_thread::sleep_for(std::chrono::milliseconds(800));
+            out = run_capture(cmd);
+            std::cout << "[BLE] Retry: " << out;
+            ok = out.find("Connection successful") != std::string::npos ||
+                 out.find("Connected: yes") != std::string::npos ||
+                 out.find("already connected") != std::string::npos;
         }
-        return connected_;
+
+        if (!ok) {
+            std::cerr << "[BLE] Connection failed. Check that the car is on and in range.\n";
+            return false;
+        }
+
+        // 4. Open a persistent bluetoothctl pipe for GATT writes
+        pipe_ = popen("bluetoothctl", "w");
+        if (!pipe_) {
+            std::cerr << "[BLE] Could not open bluetoothctl pipe for writes.\n";
+            return false;
+        }
+
+        // 5. Select the GATT attribute (write characteristic)
+        std::string sel = "select-attribute " + write_uuid_ + "\n";
+        fputs(sel.c_str(), pipe_);
+        fflush(pipe_);
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+        connected_ = true;
+        std::cout << "[BLE] Connected! GATT write pipe ready.\n";
+        return true;
     }
 
     bool is_connected() const override { return connected_; }
 
-    bool write_gatt_char(const std::string& uuid, const std::vector<uint8_t>& data) override {
-        if (!connected_) return false;
-        // Build hex string for gatttool
-        std::ostringstream hex;
-        for (size_t i = 0; i < data.size(); ++i) {
-            if (i) hex << " ";
-            hex << std::hex << std::setw(2) << std::setfill('0')
-                << static_cast<int>(data[i]);
+    bool write_gatt_char(const std::string& /*uuid*/, const std::vector<uint8_t>& data) override {
+        if (!connected_ || !pipe_) return false;
+
+        // Build: write 0xBF 0x0A ... \n
+        std::ostringstream cmd;
+        cmd << "write";
+        for (auto b : data) {
+            cmd << " 0x" << std::hex << std::setw(2) << std::setfill('0')
+                << static_cast<int>(b);
         }
-        std::string cmd = "gatttool -b " + mac_ +
-                          " --char-write-req --uuid=" + uuid +
-                          " --value='" + hex.str() + "' 2>/dev/null";
-        int ret = system(cmd.c_str());
-        return ret == 0;
+        cmd << "\n";
+
+        std::string s = cmd.str();
+        if (fputs(s.c_str(), pipe_) == EOF) {
+            connected_ = false;
+            return false;
+        }
+        fflush(pipe_);
+        return true;
     }
 
   private:
     std::string mac_;
-    bool connected_ = false;
+    std::string write_uuid_;
+    FILE*       pipe_     = nullptr;
+    bool        connected_= false;
 };
 
 #endif  // __linux__
@@ -2205,16 +2305,15 @@ int main(int argc, char** argv) {
         if (args.address.has_value()) {
             mac = args.address.value();
         } else if (args.name.has_value()) {
-            mac = resolve_ble_name_to_mac(args.name.value(), static_cast<int>(args.scan_timeout));
+            mac = resolve_name_to_mac(args.name.value(), static_cast<int>(args.scan_timeout));
             if (mac.empty()) {
-                std::cerr << "[BLE] Device '" << args.name.value() << "' not found during scan.\n";
                 return 2;
             }
         } else {
             std::cerr << "[BLE] Provide --address, --name, or --discover, or use --no-ble.\n";
             return 1;
         }
-        auto client = std::make_unique<LinuxBleClient>(mac);
+        auto client = std::make_unique<LinuxBleClient>(mac, std::string(WRITE_UUID));
         if (!client->connect()) {
             return 2;
         }
