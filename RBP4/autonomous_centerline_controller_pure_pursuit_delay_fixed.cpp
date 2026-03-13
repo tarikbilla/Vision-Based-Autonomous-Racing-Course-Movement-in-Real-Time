@@ -22,6 +22,7 @@
 #include <thread>
 #include <vector>
 #include <cstdio>
+#include <cstdlib>
 
 namespace {
 
@@ -2084,8 +2085,6 @@ std::optional<Args> parse_args(int argc, char** argv) {
 // For GATT writes we keep a persistent bluetoothctl process and pipe
 // commands to it via popen("bluetoothctl", "w").
 
-#include <sys/wait.h>
-
 // Run a shell command, return captured stdout.
 static std::string run_capture(const std::string& cmd) {
     FILE* fp = popen(cmd.c_str(), "r");
@@ -2095,18 +2094,6 @@ static std::string run_capture(const std::string& cmd) {
     while (fgets(buf, sizeof(buf), fp)) out += buf;
     pclose(fp);
     return out;
-}
-
-// Send a sequence of newline-separated commands to bluetoothctl via stdin pipe,
-// wait ms milliseconds, collect output.
-static std::string btctl_pipe(const std::string& commands, int wait_ms = 2000) {
-    // Write commands to a temp script and run bluetoothctl in batch mode
-    // bluetoothctl supports reading commands from stdin when run non-interactively
-    std::string script = "printf '" + commands + "\\n' | bluetoothctl 2>&1";
-    // Add a sleep so the adapter has time to respond
-    std::string full = "( " + script + " ) & BG=$! ; sleep " +
-                       std::to_string(wait_ms / 1000.0) + " ; wait $BG 2>/dev/null";
-    return run_capture(full);
 }
 
 // Scan for BLE devices and resolve a device name to its MAC address.
@@ -2184,10 +2171,21 @@ class LinuxBleClient final : public BleClient {
         : mac_(std::move(mac)), write_uuid_(std::move(write_uuid)) {}
 
     ~LinuxBleClient() override {
-        if (pipe_) { pclose(pipe_); pipe_ = nullptr; }
+        if (pipe_) {
+            fputs("disconnect\n", pipe_);
+            fputs("exit\n", pipe_);
+            fflush(pipe_);
+            pclose(pipe_);
+            pipe_ = nullptr;
+        }
     }
 
     bool connect() {
+        if (system("command -v bluetoothctl >/dev/null 2>&1") != 0) {
+            std::cerr << "[BLE] bluetoothctl is not installed. Install with: sudo apt install bluez\n";
+            return false;
+        }
+
         // 1. Power on adapter
         system("bluetoothctl power on >/dev/null 2>&1");
 
@@ -2227,11 +2225,18 @@ class LinuxBleClient final : public BleClient {
             return false;
         }
 
-        // 5. Select the GATT attribute (write characteristic)
+        // 5. Reconnect in same bluetoothctl session, then enter GATT menu.
+        // This avoids context mismatch between one-shot connect and pipe writes.
+        fputs("power on\n", pipe_);
+        std::string connect_cmd = "connect " + mac_ + "\n";
+        fputs(connect_cmd.c_str(), pipe_);
+        fputs("menu gatt\n", pipe_);
+
+        // 6. Select the write characteristic by UUID.
         std::string sel = "select-attribute " + write_uuid_ + "\n";
         fputs(sel.c_str(), pipe_);
         fflush(pipe_);
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
         connected_ = true;
         std::cout << "[BLE] Connected! GATT write pipe ready.\n";
@@ -2243,11 +2248,13 @@ class LinuxBleClient final : public BleClient {
     bool write_gatt_char(const std::string& /*uuid*/, const std::vector<uint8_t>& data) override {
         if (!connected_ || !pipe_) return false;
 
-        // Build: write 0xBF 0x0A ... \n
+        // Build for bluetoothctl gatt menu:
+        //   write <data=xx xx ...>
+        // No 0x prefixes.
         std::ostringstream cmd;
         cmd << "write";
         for (auto b : data) {
-            cmd << " 0x" << std::hex << std::setw(2) << std::setfill('0')
+            cmd << " " << std::hex << std::setw(2) << std::setfill('0')
                 << static_cast<int>(b);
         }
         cmd << "\n";
