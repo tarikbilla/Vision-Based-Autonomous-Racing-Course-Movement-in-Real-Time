@@ -1,4 +1,5 @@
 \documentclass[twocolumn]{article}
+%\documentclass[11pt,twoside]{article}
 
 \usepackage[utf8]{inputenc}
 \usepackage[margin=0.5in]{geometry}
@@ -9,9 +10,14 @@
 \usepackage{subcaption}
 \usepackage{amsmath}
 \usepackage{booktabs}
+\usepackage{dblfloatfix}
+\usepackage{fixltx2e}
+\usepackage{gensymb}
 \usepackage{hyperref}
 \usepackage{listings}
 \usepackage{xcolor}
+\usepackage{svg}
+
 
 % ---- Column & line number spacing tweaks ----
 \setlength{\columnsep}{24pt}
@@ -38,7 +44,7 @@
 \addbibresource{sample.bib}
 
 %%%%%% Title %%%%%%
-\title{Vision-Based Autonomous RC Car Control System: A Production-Ready Implementation}
+\title{Vision-Based Autonomous Racing Course Movement in Real Time}
 
 %%%%%% Authors %%%%%%
 \author[1]{Tarik Billa*}
@@ -49,7 +55,6 @@
 %%%%%% Affiliations %%%%%%
 \affil[1]{Department of Control, Computer and Communications Engineering \\
 THM University of Applied Sciences, Friedberg, Germany}
-\affil[*]{Corresponding author: tarik.billa@stud.thm.de}
 
 %%%%%% Date %%%%%%
 \date{March 2026}
@@ -65,19 +70,19 @@ THM University of Applied Sciences, Friedberg, Germany}
 
 %%%%%% Abstract %%%%%%
 \begin{abstract}
-This paper presents a production-ready autonomous vision-based control system for RC cars on marked tracks. Using C++17, OpenCV, and Bluetooth Low Energy, the system achieves 15~FPS tracking with 50~Hz command transmission and sub-100~ms latency. Key contributions include dual-method car detection (motion-primary, color-fallback), HSV-based centerline path extraction, and proportional steering control. The multi-threaded architecture demonstrates robust autonomous navigation with graceful fault tolerance and configuration-driven tuning. Implementation supports macOS, Linux, and Raspberry Pi platforms.
+Deploying vision based autonomous control on embedded hardware requires careful design of insight and actuation pipelines. Unlike approaches that rely on off board compute, GPU acceleration, or multiple sensors, this system achieves sub 100ms autonomous navigation on a Raspberry Pi 4 using only a single USB camera demonstrating that tight coordination between a 15 FPS vision pipeline and 50Hz BLE command transmission is achievable within a 78\% CPU budget. Using C++17, OpenCV, and Bluetooth Low Energy, the system achieves 15FPS tracking with 50Hz command transmission and sub-100ms latency. Key contributions include dual-method car detection (motion-primary, color-fallback), HSV-based centerline path extraction, and proportional steering control. The multi-threaded architecture demonstrates robust autonomous navigation with graceful fault tolerance and configuration-driven tuning. Implementation supports macOS, Linux, and Raspberry Pi platforms.
 \end{abstract}
 \vspace{1em}
 \end{@twocolumnfalse}
 ]
-
 %%%%%% Main Text %%%%%%
-
 \section{Introduction}
 
 Autonomous systems require real-time perception and control. Small-scale platforms like RC cars on marked tracks provide an ideal testbed for vision-based control, multi-threaded architecture, and wireless communication in resource-constrained environments. Unlike traditional autonomous driving (requiring LiDAR and multiple sensors), our system uses a single camera with efficient algorithms to achieve robust track-following.
 
 This paper presents the design, implementation, and validation of a production-ready autonomous RC car controller. We demonstrate that robust autonomous control is achievable with modest computational resources through: (1) motion-based primary detection with color-based fallback, (2) centerline-guided path following, (3) multi-threaded orchestration, and (4) configuration-driven parameter tuning. The system targets macOS, Linux, and Raspberry Pi platforms.
+
+The main challenge is not perception or actuation, but their real-time coordination under a shared computational budget. A tracking pipeline that consume available CPU leaves insufficient headroom for reliable BLE transmission, while a reduced control rate introduces latency that destabilizes steering. This work addresses that tension directly through thread isolation, frame rate limiting, and lazy centerline updates, sustaining 50 Hz command delivery alongside stable 15 FPS tracking, with no commands dropped over a 45 second autonomous run on Raspberry Pi 4.
 
 \section{System Architecture}
 
@@ -85,9 +90,9 @@ This paper presents the design, implementation, and validation of a production-r
 
 The system comprises three hardware layers:
 
-\textbf{Computation Platform:} Macintosh Intel/Apple Silicon or Linux desktop for development; Raspberry Pi~4 Model~B (4GB/8GB RAM) for embedded deployment. Both support 1280×720 at 30 FPS USB camera input and native BLE 5.0 connectivity.
+\textbf{Computation Platform:} Macintosh/Linux desktop for development. Raspberry Pi~4 Model~B (8GB RAM) for embedded deployment. Both support 1280×720 at 30 FPS USB camera input and native BLE 5.0 connectivity.
 
-\textbf{Sensing:} USB camera with configurable resolution (640×480 to 1280×720) and frame rate (15--30 FPS). The system adapts to camera initialization failures by attempting multiple backends (V4L2, GStreamer, direct OpenCV fallback).
+\textbf{Sensing:} USB camera with configurable resolution (640×480 to 1280×720) and frame rate (10-30 FPS). The system adapts to camera initialization failures by attempting multiple backends (V4L2, GStreamer, direct OpenCV fallback).
 
 \textbf{Actuation:} BLE-controlled RC car with maximum velocity $v_{\max} = 0.55~\text{m/s}$ (measured via 3~m distance test over 10 runs, average time 5.47~s). Currently operates at 40\% maximum speed ($v_{\text{active}} = 0.22~\text{m/s}$). Car model expects: light on/off flag, forward speed (0--255), left steering (0--100), right steering (0--100), and device identifier for message routing.
 
@@ -97,22 +102,22 @@ The system comprises three hardware layers:
 
 Five core modules interact through thread-safe queues and atomic variables, as shown in Figure~\ref{fig:1}:
 
-\textbf{CameraCapture:} Manages camera initialization, resolution/FPS negotiation, and continuous frame acquisition at native camera FPS. Implements fallback logic for device enumeration.
+\textbf{Camera Capture:} Manages camera initialization, resolution/FPS negotiation, and continuous frame acquisition at native camera FPS. Implements fallback logic for device enumeration.
 
-\textbf{CarDetector:} Implements dual-method detection with motion-based primary (MOG2 background subtraction, threshold 80, learning rate 0.003) and color-based fallback (HSV red detection across six hue ranges). Both methods apply morphological filtering and area constraints (200--20000 pixels).
+\textbf{Car Detector:} Implements dual-method detection with motion-based primary (MOG2 background subtraction, threshold 80, learning rate 0.003) and color-based fallback (HSV red detection across six hue ranges). Both methods apply morphological filtering and area constraints (200--20000 pixels).
 
-\textbf{BoundaryDetector:} Constructs track obstacle maps via HSV analysis: red pixels (hue 0--12°, 168--179°) form track boundaries; white pixels (saturation 0--70, value 180--255) mark interior markers. Convex hull of red pixels defines track ROI. Centerline extraction applies distance transform and skeleton extraction on flood-filled free space.
+\textbf{Boundary Detector:} Constructs track obstacle maps via HSV analysis: red pixels (hue 0--12°, 168--179°) form track boundaries; white pixels (saturation 0--70, value 180--255) mark interior markers. Convex hull of red pixels defines track ROI. Centerline extraction applies distance transform and skeleton extraction on flood-filled free space.
 
-\textbf{ControlGenerator:} Computes steering via two modes. Ray-casting mode (when centerline unavailable) casts three rays (−60°, 0°, +60° relative to heading) and generates evasive steering if closest ray distance $<100$ pixels. Pure pursuit mode (when centerline available) calculates offset between car position and nearest centerline point, applying proportional steering: $\text{steering} = k_p \times \text{offset}$ where $k_p$ is tuned via configuration.
+\textbf{Control Generator:} Computes steering via two modes. Ray casting mode (when centerline unavailable) casts three rays ($-60\degree$, $0\degree$, $+60\degree$ relative to heading) and generates evasive steering if closest ray distance $<100$ pixels. Pure pursuit mode (when centerline available) calculates offset between car position and nearest centerline point, applying proportional steering: $\text{steering} = k_p \times \text{offset}$ where $k_p$ is tuned via configuration.
 
-\textbf{BLEHandler:} Manages device scanning, connection retry (up to 3 attempts with 1 second delays), command formatting, and transmission at 50 Hz. On shutdown, sends 10 STOP commands (500 ms total) before disconnection.
+\textbf{BLE Handler:} Manages device scanning, connection retry (up to 3 attempts with 1 second delays), command formatting, and transmission at 50 Hz. On shutdown, sends 10 STOP commands (500 ms total) before disconnection.
 
-\textbf{ControlOrchestrator:} Synchronizes threads, manages frame queues (5-frame circular buffer), enforces 15 FPS tracking rate (67 ms sleep when needed), and publishes latest ControlVector to BLE thread.
+\textbf{Control Orchestrator:} Synchronizes threads, manages frame queues (5-frame circular buffer), enforces 15 FPS tracking rate (67 ms sleep when needed), and publishes latest ControlVector to BLE thread.
 
 % System Architecture Block Diagram
 \begin{figure}[t]
     \centering
-    \includegraphics[width=0.45\textwidth]{fig 1}
+    \includegraphics[width=0.5\textwidth]{figures/blockdiagram for vbcs 1.pdf}
     \caption{System architecture block diagram showing five core modules and their interaction through thread-safe queues.}
     \label{fig:1}
 \end{figure}
@@ -151,11 +156,18 @@ Color-based fallback applies six HSV red ranges to capture hue variations, combi
 
 Boundary detection builds track-aware guidance maps:
 
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/pipeline_final_v4.png}
+    \caption{Track perception pipeline}
+    \label{fig:pipeline}
+\end{figure*}
+
 \begin{enumerate}
   \item Convert frame to HSV
-  \item Generate red mask: inRange(hsv, [0,70,50]--[12,255,255]) $\cup$ inRange(hsv, [168,70,50]--[179,255,255])
+  \item Generate red mask: in Range(hsv, [0,70,50]--[12,255,255]) $\cup$ inRange(hsv, [168,70,50]--[179,255,255])
   \item Compute convex hull from red pixels; create ROI mask via fillConvexPoly
-  \item Generate white mask: inRange(hsv, [0,0,180]--[179,70,255]) $\cap$ ROI
+  \item Generate white mask: in Range(hsv, [0,0,180]--[179,70,255]) $\cap$ ROI
   \item Combine red + white as obstacles; apply morphological open/close/dilate
   \item Flood fill from image border to identify free space
   \item Extract largest connected component; fill small holes (<100 pixels)
@@ -175,7 +187,8 @@ When centerline is unavailable or corrupted, ray casting provides fallback guida
 \text{heading} = \arctan2(\Delta y, \Delta x) \times 180 / \pi
 \end{equation}
 
-Three rays are cast at absolute angles: $\text{heading} - 60°$, $\text{heading}$, $\text{heading} + 60°$. Each ray propagates from car center until hitting image boundary or black pixel (threshold<50). If closest ray distance $d_{\min} < 100$ pixels (evasive threshold), speed reduces to half default and steering commands counter the closest obstacle.
+Three rays are cast at absolute angles: $\text{heading} -60\degree$, 
+$\text{heading}$, $\text{heading} + 60\degree$. Each ray propagates from car center until hitting image boundary or black pixel (threshold $<50$). If closest ray distance $d_{\min} < 100$ pixels (evasive threshold), speed reduces to half default and steering commands counter the closest obstacle.
 
 \subsection{Pure Pursuit Control}
 
@@ -207,8 +220,8 @@ All parameters reside in \texttt{config/config.json} with reloadable settings (r
 
 \begin{lstlisting}
 {
-  "camera": {"index": 0, "width": 1280, 
-             "height": 720, "fps": 30},
+  "camera": {"index": 0, "width": 1024, 
+             "height": 576, "fps": 30},
   "ble": {"device_mac": "f9:af:3c:e2:d2:f5",
     "characteristic_uuid": 
     "6e400002-b5a3-f393-e0a9-e50e24dcca9e"},
@@ -274,7 +287,7 @@ On Raspberry Pi~4 (2.4 GHz quad-core ARM):
 
 \section{Conclusions}
 
-This work demonstrates that production-grade autonomous control is achievable with minimal computational resources and a single camera. The system successfully navigates a 540~cm track for multiple laps using only motion-based detection and centerline-guided path following. Key design choices—MOG2 background subtraction for robustness, HSV boundary detection for path guidance, and 50~Hz BLE communication—enable stable autonomous operation with 0.85~ms command latency.
+This work demonstrates that production-grade autonomous control is achievable with minimal computational resources and a single camera. The system successfully navigates a 540~cm track for multiple laps using only motion-based detection and centerline-guided path following. Key design choices MOG2 background subtraction for robustness, HSV boundary detection for path guidance, and 50~Hz BLE communication, enable stable autonomous operation with 0.85~ms command latency.
 
 The 45-second field test validated end-to-end functionality: 2250 BLE commands delivered without loss, stable 15~FPS tracking, and smooth steering control at 40\% speed (0.22~m/s). The modular C++17 architecture ports seamlessly across macOS, Linux, and Raspberry Pi, supporting both development and embedded deployment.
 
@@ -287,7 +300,7 @@ Long-term research directions involve: semantic segmentation for off-track obsta
 \section*{Acknowledgments}
 
 \subsection*{Author Contributions}
-Tarik Billa designed the system architecture, implemented core modules (car detector, boundary detector, control orchestrator), and conducted field testing. Purva Ghanate contributed to BLE communication and device integration. Hicham Aniss Mezali optimized image processing pipelines for Raspberry Pi deployment. Manuel Ángel Vega Gómez validated tracking algorithms and compiled hardware compatibility documentation. Prof. Harmut Weber supervised the project and provided guidance on computer vision methodology.
+Tarik Billa designed the system architecture, implemented core modules (BLE communication, car detector, centerline detector, and development), and conducted field testing. Purva Ghanate contributed to boundary detection, hardware testing, device integration and prepare documentations. Hicham Aniss Mezali optimized control orchestrator, image processing pipelines for Raspberry Pi deployment. Manuel Ángel Vega Gómez validated tracking algorithms and compiled hardware compatibility documentation. Prof. Harmut Weber supervised the project and provided guidance on computer vision methodology and real time tracking.
 
 \subsection*{Funding}
 This work was supported by the Department of Control, Computer and Communications Engineering at THM University of Applied Sciences.
@@ -296,6 +309,9 @@ This work was supported by the Department of Control, Computer and Communication
 The authors declare no conflicts of interest regarding the publication of this article.
 
 \subsection*{Data Availability}
-All source code, configuration files, and sample video datasets are available at the open-source repository: \texttt{https://github.com/tarikbilla/IoT-Project-Vision-based-autonomous-RC-car-control-system}. Field testing videos and performance logs are available upon request from the corresponding author.
+All source code, configuration files, and sample video datasets are available at the open-source repository: \href{https://github.com/tarikbilla/IoT-Project-Vision-based-autonomous-RC-car-control-system}{https://github.com/tarikbilla/IoT-Project-Vision-based-autonomous-RC-car-control-system}. Field testing videos and performance logs are available upon request from the corresponding author.
 
 \end{document}
+
+
+

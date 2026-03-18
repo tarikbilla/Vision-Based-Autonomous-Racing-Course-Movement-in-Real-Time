@@ -1,0 +1,9 @@
+
+cd /Users/tarikbilla/Projects/IOT_ACCS
+./.venv/bin/python autonomous_centerline_controller_pure_pursuit_delay_fixed.py --address ED:5C:23:84:48:8D --max-deg 24 --steer-smooth 70 --ratio 0.9 --c-sign -1 --speed-k 0.03
+
+
+
+cd /Users/tarikbilla/Projects/IOT_ACCS
+./.venv/bin/python autonomous_centerline_controller_pure_pursuit_delay_fixed.py --discover
+./.venv/bin/python autonomous_centerline_controller_pure_pursuit_delay_fixed.py --name DRiFT-ED5C2384488D --max-deg 24 --steer-smooth 70 --ratio 0.9 --c-sign -1 --speed-k 0.03
