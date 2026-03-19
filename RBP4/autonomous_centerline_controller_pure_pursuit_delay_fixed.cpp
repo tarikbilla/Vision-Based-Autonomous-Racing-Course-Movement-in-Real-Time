@@ -1,5 +1,4 @@
 #include <opencv2/opencv.hpp>
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -21,8 +20,17 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <cctype>
+#include <cerrno>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <unistd.h>
+#include <memory>
+
+#ifdef HAVE_SIMPLEBLE
+#include <simpleble/SimpleBLE.h>
+#endif
 
 namespace {
 
@@ -311,9 +319,22 @@ void log_row(const AbcResult& r) {
 }
 
 constexpr int CAM_INDEX = 0;
-constexpr int FRAME_W = 1280;
-constexpr int FRAME_H = 720;
+constexpr int DEFAULT_FRAME_W = 1280;
+constexpr int DEFAULT_FRAME_H = 720;
+constexpr int DEFAULT_CAM_FPS = 20;
 const std::string CENTERLINE_CSV = "centerline.csv";
+
+int get_env_int(const char* key, int default_value) {
+    const char* v = std::getenv(key);
+    if (!v || !*v) {
+        return default_value;
+    }
+    try {
+        return std::stoi(std::string(v));
+    } catch (...) {
+        return default_value;
+    }
+}
 
 constexpr int MOG2_HISTORY = 500;
 constexpr double MOG2_VAR_THRESHOLD = 16.0;
@@ -460,7 +481,7 @@ double adaptive_meas_alpha(double speed) {
 
 class CamThread {
   public:
-    CamThread(int src, int w, int h) : src_(src), w_(w), h_(h) {}
+    CamThread(int src, int w, int h, int fps) : src_(src), w_(w), h_(h), fps_(fps) {}
 
     void start() {
     std::vector<int> backends;
@@ -486,6 +507,9 @@ class CamThread {
         }
         cap_.set(cv::CAP_PROP_FRAME_WIDTH, w_);
         cap_.set(cv::CAP_PROP_FRAME_HEIGHT, h_);
+        if (fps_ > 0) {
+            cap_.set(cv::CAP_PROP_FPS, fps_);
+        }
         cap_.set(cv::CAP_PROP_BUFFERSIZE, 1);
         cap_.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
         cap_.set(cv::CAP_PROP_AUTO_EXPOSURE, 0.25);
@@ -543,6 +567,7 @@ class CamThread {
     int src_;
     int w_;
     int h_;
+    int fps_;
     cv::VideoCapture cap_;
     std::thread th_;
     std::mutex m_;
@@ -648,7 +673,7 @@ std::vector<cv::Point2d> ensure_closed(std::vector<cv::Point2d> arr) {
     return arr;
 }
 
-std::optional<std::vector<cv::Point2d>> load_centerline(const std::string& path, bool flip) {
+std::optional<std::vector<cv::Point2d>> load_centerline(const std::string& path, bool flip, int target_w, int target_h) {
     if (!std::filesystem::exists(path)) {
         return std::nullopt;
     }
@@ -658,12 +683,38 @@ std::optional<std::vector<cv::Point2d>> load_centerline(const std::string& path,
         return std::nullopt;
     }
 
+    int src_w = 0;
+    int src_h = 0;
     std::vector<cv::Point2d> pts;
     std::string line;
     while (std::getline(f, line)) {
-        if (line.empty() || line[0] == '#' || (!line.empty() && (line[0] == 'x' || line[0] == 'X'))) {
+        if (line.empty()) {
             continue;
         }
+
+        if (line[0] == '#') {
+            const auto wpos = line.find("W=");
+            const auto hpos = line.find("H=");
+            try {
+                if (wpos != std::string::npos) {
+                    size_t end = line.find_first_not_of("0123456789", wpos + 2);
+                    src_w = std::stoi(line.substr(wpos + 2, end - (wpos + 2)));
+                }
+                if (hpos != std::string::npos) {
+                    size_t end = line.find_first_not_of("0123456789", hpos + 2);
+                    src_h = std::stoi(line.substr(hpos + 2, end - (hpos + 2)));
+                }
+            } catch (...) {
+                src_w = 0;
+                src_h = 0;
+            }
+            continue;
+        }
+
+        if (line[0] == 'x' || line[0] == 'X') {
+            continue;
+        }
+
         std::stringstream ss(line);
         std::string sx, sy;
         if (!std::getline(ss, sx, ',')) {
@@ -683,6 +734,16 @@ std::optional<std::vector<cv::Point2d>> load_centerline(const std::string& path,
     }
 
     auto arr = ensure_closed(pts);
+    if (src_w > 0 && src_h > 0 && target_w > 0 && target_h > 0 && (src_w != target_w || src_h != target_h)) {
+        const double sx = static_cast<double>(target_w) / static_cast<double>(src_w);
+        const double sy = static_cast<double>(target_h) / static_cast<double>(src_h);
+        for (auto& p : arr) {
+            p.x *= sx;
+            p.y *= sy;
+        }
+        std::cout << "[CV] Scaled centerline from " << src_w << "x" << src_h << " to " << target_w << "x" << target_h << "\n";
+    }
+
     if (flip) {
         std::reverse(arr.begin(), arr.end());
         arr = ensure_closed(arr);
@@ -1581,7 +1642,13 @@ void cv_thread() {
         std::cout << "[CV] Headless mode: DISPLAY/WAYLAND not set, GUI disabled.\n";
     }
 
-    CamThread cam(CAM_INDEX, FRAME_W, FRAME_H);
+    const int frame_w = clampv(get_env_int("CAM_FRAME_W", DEFAULT_FRAME_W), 320, 1920);
+    const int frame_h = clampv(get_env_int("CAM_FRAME_H", DEFAULT_FRAME_H), 240, 1080);
+    const int cam_fps = clampv(get_env_int("CAM_FPS", DEFAULT_CAM_FPS), 5, 30);
+
+    std::cout << "[CV] Camera config: " << frame_w << "x" << frame_h << " @ " << cam_fps << " FPS\n";
+
+    CamThread cam(CAM_INDEX, frame_w, frame_h, cam_fps);
     cam.start();
 
     auto backSub = build_mog2();
@@ -1590,7 +1657,7 @@ void cv_thread() {
     std::optional<std::vector<cv::Point2d>> path_cl;
     {
         std::scoped_lock lk(state_mutex);
-        path_cl = load_centerline(CENTERLINE_CSV, state.flip_centerline);
+        path_cl = load_centerline(CENTERLINE_CSV, state.flip_centerline, frame_w, frame_h);
         if (path_cl.has_value()) {
             std::cout << "[CV] Loaded centerline: " << path_cl->size() << " pts\n";
             if (state.flip_centerline) {
@@ -2082,119 +2149,145 @@ std::optional<Args> parse_args(int argc, char** argv) {
     return args;
 }
 
-#ifdef __linux__
-// ── Native Linux BLE client via BlueZ D-Bus / bluetoothctl ──────────────────
-// Uses bluetoothctl (BlueZ 5.50+) for scan, connect, and GATT writes.
-// Requires: sudo apt install bluez
-// No gatttool needed (deprecated in modern BlueZ).
-//
-// Strategy:
-//  - Scan: pipe commands into bluetoothctl via popen in write mode
-//  - Connect: bluetoothctl connect <MAC>
-//  - GATT write: bluetoothctl select-attribute + write  (interactive pipe)
-//
-// For GATT writes we keep a persistent bluetoothctl process and pipe
-// commands to it via popen("bluetoothctl", "w").
+int delegate_ble_mode_to_python(int argc, char** argv) {
+    const std::filesystem::path script = std::filesystem::current_path() / "autonomous_centerline_controller_pure_pursuit_delay_fixed.py";
+    if (!std::filesystem::exists(script)) {
+        std::cerr << "[BLE] Python controller not found: " << script << "\n";
+        return 2;
+    }
 
-// Run a shell command, return captured stdout.
+    std::string python_exe = "python3";
+    const std::filesystem::path venv_py = std::filesystem::current_path() / ".venv" / "bin" / "python";
+    if (std::filesystem::exists(venv_py)) {
+        python_exe = venv_py.string();
+    }
+
+    std::vector<std::string> arg_storage;
+    arg_storage.reserve(static_cast<size_t>(argc) + 2);
+    arg_storage.push_back(python_exe);
+    arg_storage.push_back(script.string());
+    for (int i = 1; i < argc; ++i) {
+        arg_storage.push_back(argv[i]);
+    }
+
+    std::vector<char*> c_args;
+    c_args.reserve(arg_storage.size() + 1);
+    for (auto& s : arg_storage) {
+        c_args.push_back(const_cast<char*>(s.c_str()));
+    }
+    c_args.push_back(nullptr);
+
+    std::cout << "[BLE] Delegating BLE mode to Python backend: " << python_exe << "\n";
+    execvp(c_args[0], c_args.data());
+
+    std::cerr << "[BLE] Failed to start Python delegation: " << std::strerror(errno) << "\n";
+    return 2;
+}
+
+#ifdef __linux__
+
 static std::string run_capture(const std::string& cmd) {
     FILE* fp = popen(cmd.c_str(), "r");
-    if (!fp) return {};
+    if (!fp) {
+        return {};
+    }
     std::string out;
     char buf[256];
-    while (fgets(buf, sizeof(buf), fp)) out += buf;
+    while (fgets(buf, sizeof(buf), fp)) {
+        out += buf;
+    }
     pclose(fp);
     return out;
 }
 
-// Scan for BLE devices and resolve a device name to its MAC address.
-// Returns MAC string like "AA:BB:CC:DD:EE:FF" or empty string on failure.
+static std::string strip_ansi(const std::string& input) {
+    std::string clean;
+    clean.reserve(input.size());
+    for (size_t i = 0; i < input.size();) {
+        if (input[i] == '\x1b' && i + 1 < input.size() && input[i + 1] == '[') {
+            i += 2;
+            while (i < input.size() && input[i] != 'm') {
+                ++i;
+            }
+            if (i < input.size()) {
+                ++i;
+            }
+            continue;
+        }
+        clean.push_back(input[i]);
+        ++i;
+    }
+    return clean;
+}
+
+static std::string to_lower_copy(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return s;
+}
+
 static std::string resolve_name_to_mac(const std::string& name, int timeout_sec) {
     std::cout << "[BLE] Scanning for '" << name << "' (" << timeout_sec << "s)...\n";
     std::flush(std::cout);
 
-    // Use bluetoothctl in scan mode: power on, scan on, wait, devices, scan off
     std::string cmd =
         "bluetoothctl power on >/dev/null 2>&1 ; "
         "bluetoothctl scan on >/dev/null 2>&1 & "
         "sleep " + std::to_string(timeout_sec) + " ; "
         "bluetoothctl scan off >/dev/null 2>&1 ; "
         "bluetoothctl devices 2>/dev/null";
-    std::string output = run_capture(cmd);
+    const std::string clean = strip_ansi(run_capture(cmd));
 
-    // Strip ANSI escape codes (bluetoothctl sometimes emits colour codes)
-    std::string clean;
-    clean.reserve(output.size());
-    for (size_t i = 0; i < output.size(); ) {
-        if (output[i] == '\x1b' && i + 1 < output.size() && output[i+1] == '[') {
-            i += 2;
-            while (i < output.size() && output[i] != 'm') ++i;
-            if (i < output.size()) ++i;
-        } else {
-            clean += output[i++];
-        }
-    }
-
-    auto to_lower = [](std::string s) {
-        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
-        return s;
-    };
-
-    const std::string wanted = to_lower(name);
+    const std::string wanted = to_lower_copy(name);
     std::vector<std::pair<std::string, std::string>> discovered;
 
     std::istringstream ss(clean);
     std::string line;
     while (std::getline(ss, line)) {
-        // Line format: "Device AA:BB:CC:DD:EE:FF Name"
         std::istringstream ls(line);
         std::string tok;
-        ls >> tok; // "Device" or "[NEW]" "Device"
-        if (tok == "[NEW]" || tok == "[CHG]") ls >> tok; // skip prefix
-        if (tok == "Device") {
-            std::string mac;
-            ls >> mac;
-            std::string dev_name;
-            std::getline(ls, dev_name);
-            while (!dev_name.empty() && std::isspace(static_cast<unsigned char>(dev_name.front()))) {
-                dev_name.erase(dev_name.begin());
-            }
+        ls >> tok;
+        if (tok == "[NEW]" || tok == "[CHG]") {
+            ls >> tok;
+        }
+        if (tok != "Device") {
+            continue;
+        }
 
-            if (mac.size() == 17 && mac[2] == ':') {
-                discovered.push_back({mac, dev_name});
+        std::string mac;
+        ls >> mac;
+        std::string dev_name;
+        std::getline(ls, dev_name);
+        while (!dev_name.empty() && std::isspace(static_cast<unsigned char>(dev_name.front()))) {
+            dev_name.erase(dev_name.begin());
+        }
 
-                const std::string dev_name_lower = to_lower(dev_name);
-                const std::string mac_lower = to_lower(mac);
-                if (!wanted.empty() && (dev_name_lower.find(wanted) != std::string::npos || mac_lower == wanted)) {
-                    std::cout << "[BLE] Resolved '" << name << "' -> " << mac << "\n";
-                    return mac;
-                }
+        if (mac.size() == 17 && mac[2] == ':') {
+            discovered.emplace_back(mac, dev_name);
+            const std::string mac_l = to_lower_copy(mac);
+            const std::string name_l = to_lower_copy(dev_name);
+            if (!wanted.empty() && (name_l.find(wanted) != std::string::npos || mac_l == wanted)) {
+                std::cout << "[BLE] Resolved '" << name << "' -> " << mac << "\n";
+                return mac;
             }
         }
     }
 
-    std::vector<std::pair<std::string, std::string>> drift_like;
-    for (const auto& dev : discovered) {
-        const std::string n = to_lower(dev.second);
-        if (n.find("drift") != std::string::npos || n.find("dr!ft") != std::string::npos) {
-            drift_like.push_back(dev);
+    for (const auto& d : discovered) {
+        const std::string name_l = to_lower_copy(d.second);
+        if (name_l.find("drift") != std::string::npos || name_l.find("dr!ft") != std::string::npos) {
+            std::cout << "[BLE] Requested name not matched exactly; using discovered DRIFT-like device -> " << d.first
+                      << " (" << d.second << ")\n";
+            return d.first;
         }
-    }
-
-    if (drift_like.size() == 1) {
-        std::cout << "[BLE] Requested name '" << name << "' not found; using discovered DRiFT device '"
-                  << drift_like[0].second << "' -> " << drift_like[0].first << "\n";
-        return drift_like[0].first;
     }
 
     std::cerr << "[BLE] Device '" << name << "' not found during scan.\n";
-    std::cerr << "[BLE] Raw output:\n" << clean << "\n";
+    std::cerr << "[BLE] Devices output:\n" << clean << "\n";
     return {};
 }
 
-// Discover all nearby BLE devices and print them.
 static void ble_discover(int timeout_sec) {
     std::cout << "[BLE] Scanning " << timeout_sec << "s for BLE devices...\n";
     std::flush(std::cout);
@@ -2204,13 +2297,201 @@ static void ble_discover(int timeout_sec) {
         "sleep " + std::to_string(timeout_sec) + " ; "
         "bluetoothctl scan off >/dev/null 2>&1 ; "
         "bluetoothctl devices 2>/dev/null";
-    std::string out = run_capture(cmd);
-    std::cout << "[BLE] Devices found:\n" << out << "\n";
+    std::cout << "[BLE] Devices found:\n" << strip_ansi(run_capture(cmd)) << "\n";
 }
 
-// ── LinuxBleClient ────────────────────────────────────────────────────────────
-// Connects to a BLE peripheral by MAC address using bluetoothctl,
-// then writes GATT characteristics using bluetoothctl select-attribute + write.
+static std::string btctl_script_output(const std::vector<std::string>& commands) {
+    std::ostringstream script;
+    script << "echo -e '";
+    for (const auto& c : commands) {
+        script << c << "\\n";
+    }
+    script << "' | bluetoothctl 2>/dev/null";
+    return strip_ansi(run_capture(script.str()));
+}
+
+static std::string resolve_attr_path_for_uuid(const std::string& mac, const std::string& uuid) {
+    const std::string out = btctl_script_output({"connect " + mac, "menu gatt", "list-attributes", "exit"});
+    const std::string uuid_l = to_lower_copy(uuid);
+
+    std::istringstream ss(out);
+    std::string line;
+    while (std::getline(ss, line)) {
+        const std::string line_l = to_lower_copy(line);
+        if (line_l.find(uuid_l) == std::string::npos) {
+            continue;
+        }
+
+        const auto p = line.find("/org/bluez/");
+        if (p == std::string::npos) {
+            continue;
+        }
+
+        size_t end = p;
+        while (end < line.size() && !std::isspace(static_cast<unsigned char>(line[end]))) {
+            ++end;
+        }
+        std::string path = line.substr(p, end - p);
+        if (path.find("/char") != std::string::npos) {
+            return path;
+        }
+    }
+
+    return {};
+}
+
+static std::string detect_write_mode_for_uuid(const std::string& mac, const std::string& uuid_or_path) {
+    const std::string out = btctl_script_output({"connect " + mac, "menu gatt", "select-attribute " + uuid_or_path,
+                                                 "attribute-info", "exit"});
+    const std::string out_l = to_lower_copy(out);
+
+    if (out_l.find("write-without-response") != std::string::npos || out_l.find("write without response") != std::string::npos) {
+        return "command";
+    }
+    if (out_l.find("write") != std::string::npos) {
+        return "request";
+    }
+    return "command";
+}
+
+#ifdef HAVE_SIMPLEBLE
+class LinuxSimpleBleClient final : public BleClient {
+  public:
+    LinuxSimpleBleClient(std::string hint_or_mac, int scan_timeout_sec)
+        : hint_or_mac_(std::move(hint_or_mac)), scan_timeout_sec_(std::max(3, scan_timeout_sec)) {}
+
+    bool connect() {
+        try {
+            auto adapters = SimpleBLE::Adapter::get_adapters();
+            if (adapters.empty()) {
+                std::cerr << "[BLE] SimpleBLE: no adapters found\n";
+                return false;
+            }
+
+            auto adapter = adapters[0];
+            std::cout << "[BLE] SimpleBLE: scanning for " << scan_timeout_sec_ << "s...\n";
+            adapter.scan_for(scan_timeout_sec_ * 1000);
+            auto peripherals = adapter.scan_get_results();
+            if (peripherals.empty()) {
+                std::cerr << "[BLE] SimpleBLE: no peripherals found\n";
+                return false;
+            }
+
+            const std::string hint_l = to_lower_copy(hint_or_mac_);
+            int match_idx = -1;
+            for (size_t i = 0; i < peripherals.size(); ++i) {
+                std::string id = peripherals[i].identifier();
+                std::string addr = peripherals[i].address();
+                std::string id_l = to_lower_copy(id);
+                std::string addr_l = to_lower_copy(addr);
+
+                if (!hint_l.empty() && (id_l.find(hint_l) != std::string::npos || addr_l == hint_l)) {
+                    match_idx = static_cast<int>(i);
+                    break;
+                }
+            }
+
+            if (match_idx < 0) {
+                for (size_t i = 0; i < peripherals.size(); ++i) {
+                    std::string id_l = to_lower_copy(peripherals[i].identifier());
+                    if (id_l.find("drift") != std::string::npos || id_l.find("dr!ft") != std::string::npos) {
+                        match_idx = static_cast<int>(i);
+                        break;
+                    }
+                }
+            }
+
+            if (match_idx < 0) {
+                std::cerr << "[BLE] SimpleBLE: matching peripheral not found\n";
+                return false;
+            }
+
+            peripheral_ = peripherals[static_cast<size_t>(match_idx)];
+            std::cout << "[BLE] SimpleBLE: connecting to " << peripheral_.identifier() << " (" << peripheral_.address() << ")\n";
+            peripheral_.connect();
+            std::this_thread::sleep_for(std::chrono::milliseconds(700));
+
+            const std::string target_uuid_l = to_lower_copy(std::string(WRITE_UUID));
+            write_candidates_.clear();
+            for (auto& svc : peripheral_.services()) {
+                for (auto& ch : svc.characteristics()) {
+                    std::string cu = to_lower_copy(ch.uuid());
+                    if (cu == target_uuid_l) {
+                        write_candidates_.push_back({svc.uuid(), ch.uuid()});
+                    }
+                }
+            }
+
+            if (write_candidates_.empty()) {
+                std::cerr << "[BLE] SimpleBLE: target char UUID not found: " << WRITE_UUID << "\n";
+                return false;
+            }
+
+            active_candidate_ = 0;
+            service_uuid_ = write_candidates_[0].first;
+            char_uuid_ = write_candidates_[0].second;
+
+            connected_ = true;
+            std::cout << "[BLE] SimpleBLE connected; candidates=" << write_candidates_.size()
+                      << " active service=" << service_uuid_ << " char=" << char_uuid_ << "\n";
+            return true;
+        } catch (const std::exception& e) {
+            std::cerr << "[BLE] SimpleBLE connect failed: " << e.what() << "\n";
+            connected_ = false;
+            return false;
+        }
+    }
+
+    bool is_connected() const override { return connected_; }
+
+    bool write_gatt_char(const std::string&, const std::vector<uint8_t>& data) override {
+        if (!connected_ || write_candidates_.empty()) {
+            return false;
+        }
+
+        try {
+            SimpleBLE::ByteArray bytes(data.begin(), data.end());
+
+            for (size_t hop = 0; hop < write_candidates_.size(); ++hop) {
+                const size_t idx = (active_candidate_ + hop) % write_candidates_.size();
+                const auto& candidate = write_candidates_[idx];
+                try {
+                    peripheral_.write_command(candidate.first, candidate.second, bytes);
+                    active_candidate_ = idx;
+                    service_uuid_ = candidate.first;
+                    char_uuid_ = candidate.second;
+                    return true;
+                } catch (...) {
+                    try {
+                        peripheral_.write_request(candidate.first, candidate.second, bytes);
+                        active_candidate_ = idx;
+                        service_uuid_ = candidate.first;
+                        char_uuid_ = candidate.second;
+                        return true;
+                    } catch (...) {
+                    }
+                }
+            }
+
+            std::cerr << "[BLE] SimpleBLE write failed on all candidates\n";
+            return false;
+        } catch (const std::exception& e) {
+            std::cerr << "[BLE] SimpleBLE write failed: " << e.what() << "\n";
+            return false;
+        }
+    }
+
+  private:
+    std::string hint_or_mac_;
+    int scan_timeout_sec_;
+    bool connected_ = false;
+    std::vector<std::pair<std::string, std::string>> write_candidates_;
+    size_t active_candidate_ = 0;
+    std::string service_uuid_;
+    std::string char_uuid_;
+    SimpleBLE::Peripheral peripheral_;
+};
+#endif
 
 class LinuxBleClient final : public BleClient {
   public:
@@ -2233,31 +2514,24 @@ class LinuxBleClient final : public BleClient {
             return false;
         }
 
-        // 1. Power on adapter
         system("bluetoothctl power on >/dev/null 2>&1");
+        system(("bluetoothctl trust " + mac_ + " >/dev/null 2>&1").c_str());
 
-        // 2. Pair/trust if not already (best-effort)
-        std::string trust_cmd = "bluetoothctl trust " + mac_ + " >/dev/null 2>&1";
-        system(trust_cmd.c_str());
-
-        // 3. Connect
         std::cout << "[BLE] Connecting to " << mac_ << " ...\n";
         std::flush(std::cout);
-        std::string cmd = "bluetoothctl connect " + mac_ + " 2>&1";
-        std::string out = run_capture(cmd);
-        std::cout << "[BLE] " << out;
+        const std::string connect_cmd = "bluetoothctl connect " + mac_ + " 2>&1";
 
-        bool ok = out.find("Connection successful") != std::string::npos ||
-                  out.find("Connected: yes") != std::string::npos ||
-                  out.find("already connected") != std::string::npos;
-        if (!ok) {
-            // Try a second time — BLE devices sometimes need a retry
-            std::this_thread::sleep_for(std::chrono::milliseconds(800));
-            out = run_capture(cmd);
-            std::cout << "[BLE] Retry: " << out;
+        bool ok = false;
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            const std::string out = strip_ansi(run_capture(connect_cmd));
+            std::cout << "[BLE] Attempt " << (attempt + 1) << ": " << out;
             ok = out.find("Connection successful") != std::string::npos ||
                  out.find("Connected: yes") != std::string::npos ||
                  out.find("already connected") != std::string::npos;
+            if (ok) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(700));
         }
 
         if (!ok) {
@@ -2265,40 +2539,43 @@ class LinuxBleClient final : public BleClient {
             return false;
         }
 
-        std::cout << "[BLE] Waiting for GATT services to resolve...\n";
-        std::flush(std::cout);
         bool services_ready = false;
         for (int i = 0; i < 30; ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
             const std::string info = run_capture("bluetoothctl info " + mac_ + " 2>/dev/null");
             if (info.find("ServicesResolved: yes") != std::string::npos) {
                 services_ready = true;
                 break;
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
         if (!services_ready) {
-            std::cerr << "[BLE] Timed out waiting for ServicesResolved. Trying anyway...\n";
-        } else {
-            std::cout << "[BLE] Services resolved.\n";
+            std::cerr << "[BLE] Warning: ServicesResolved timeout; continuing anyway.\n";
         }
 
-        // 4. Open a persistent bluetoothctl pipe for GATT writes
         pipe_ = popen("bluetoothctl", "w");
         if (!pipe_) {
             std::cerr << "[BLE] Could not open bluetoothctl pipe for writes.\n";
             return false;
         }
 
-        // 5. Enter GATT menu in persistent bluetoothctl session.
-        // Do NOT reconnect here; link is already up from step 3.
+        fputs("power on\n", pipe_);
+        fputs(("connect " + mac_ + "\n").c_str(), pipe_);
         fputs("menu gatt\n", pipe_);
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
-        // 6. Select the write characteristic by UUID.
-        std::string sel = "select-attribute " + write_uuid_ + "\n";
-        fputs(sel.c_str(), pipe_);
+        selected_attribute_ = resolve_attr_path_for_uuid(mac_, write_uuid_);
+        if (selected_attribute_.empty()) {
+            selected_attribute_ = write_uuid_;
+            std::cout << "[BLE] Selecting attribute by UUID: " << selected_attribute_ << "\n";
+        } else {
+            std::cout << "[BLE] Selecting attribute by path: " << selected_attribute_ << "\n";
+        }
+
+        write_mode_ = detect_write_mode_for_uuid(mac_, selected_attribute_);
+        std::cout << "[BLE] Preferred write mode: " << write_mode_ << "\n";
+
+        fputs(("select-attribute " + selected_attribute_ + "\n").c_str(), pipe_);
         fflush(pipe_);
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
         connected_ = true;
         std::cout << "[BLE] Connected! GATT write pipe ready.\n";
@@ -2307,22 +2584,19 @@ class LinuxBleClient final : public BleClient {
 
     bool is_connected() const override { return connected_; }
 
-    bool write_gatt_char(const std::string& /*uuid*/, const std::vector<uint8_t>& data) override {
-        if (!connected_ || !pipe_) return false;
+    bool write_gatt_char(const std::string&, const std::vector<uint8_t>& data) override {
+        if (!connected_ || !pipe_) {
+            return false;
+        }
 
-        // Build for bluetoothctl gatt menu:
-        //   write 0xbf 0x0a 0x00 ...
-        // 0x-prefixed tokens avoid parser errors like "Invalid value at index 0".
         std::ostringstream cmd;
         cmd << "write";
         for (auto b : data) {
-            cmd << " 0x";
-            cmd << std::hex << std::setw(2) << std::setfill('0')
-                << static_cast<int>(b);
+            cmd << " 0x" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(b);
         }
-        cmd << "\n";
+        cmd << " 0 " << write_mode_ << "\n";
 
-        std::string s = cmd.str();
+        const std::string s = cmd.str();
         if (fputs(s.c_str(), pipe_) == EOF) {
             connected_ = false;
             return false;
@@ -2334,11 +2608,13 @@ class LinuxBleClient final : public BleClient {
   private:
     std::string mac_;
     std::string write_uuid_;
-    FILE*       pipe_     = nullptr;
-    bool        connected_= false;
+    std::string selected_attribute_;
+    std::string write_mode_ = "command";
+    FILE* pipe_ = nullptr;
+    bool connected_ = false;
 };
 
-#endif  // __linux__
+#endif
 
 }  // namespace
 
@@ -2370,7 +2646,35 @@ int main(int argc, char** argv) {
         ble_discover(static_cast<int>(args.scan_timeout));
         return 0;
     } else {
-        // Resolve MAC: prefer --address, then --name via scan
+#ifdef HAVE_SIMPLEBLE
+        {
+            std::string hint;
+            if (args.address.has_value()) {
+                hint = args.address.value();
+            } else if (args.name.has_value()) {
+                hint = args.name.value();
+            }
+
+            auto simple_client = std::make_unique<LinuxSimpleBleClient>(hint, static_cast<int>(std::max(3.0, args.scan_timeout)));
+            if (simple_client->connect()) {
+                std::cout << "[BLE] Using SimpleBLE backend\n";
+                ble_client = std::move(simple_client);
+            } else {
+                std::cerr << "[BLE] SimpleBLE unavailable/failed; falling back to bluetoothctl backend\n";
+            }
+        }
+#endif
+
+        const char* force_bluez_env = std::getenv("FORCE_BLUEZ_CLI");
+        const bool force_bluez = force_bluez_env && std::string(force_bluez_env) == "1";
+
+        if (!ble_client && !force_bluez) {
+            std::cerr << "[BLE] Native Linux BLE backend unavailable; switching to Python BLE backend. "
+                      << "Set FORCE_BLUEZ_CLI=1 to force bluetoothctl backend.\n";
+            return delegate_ble_mode_to_python(argc, argv);
+        }
+
+        if (!ble_client) {
         std::string mac;
         if (args.address.has_value()) {
             mac = args.address.value();
@@ -2383,16 +2687,16 @@ int main(int argc, char** argv) {
             std::cerr << "[BLE] Provide --address, --name, or --discover, or use --no-ble.\n";
             return 1;
         }
+
         auto client = std::make_unique<LinuxBleClient>(mac, std::string(WRITE_UUID));
         if (!client->connect()) {
             return 2;
         }
         ble_client = std::move(client);
+        }
 #else
     } else {
-        std::cerr << "[BLE] Native BLE is only supported on Linux/Raspberry Pi 4.\n";
-        std::cerr << "[BLE] This binary must be built and run on the Raspberry Pi 4.\n";
-        return 2;
+        return delegate_ble_mode_to_python(argc, argv);
 #endif
     }
 
