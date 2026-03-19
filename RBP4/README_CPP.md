@@ -125,3 +125,36 @@ cmake --build build -j$(nproc)
 - Make sure the Bluetooth adapter is powered on: `bluetoothctl power on`
 - `gatttool` is not required (deprecated).
 - If permissions fail, run with `sudo`.
+
+---
+
+## Raspberry Pi BLE Troubleshooting
+
+If macOS works but Raspberry Pi does not, validate Linux BLE first:
+
+```bash
+bluetoothctl power on
+bluetoothctl scan on
+# wait until your car appears, then Ctrl+C
+bluetoothctl connect ED:5C:23:84:48:8D
+bluetoothctl info ED:5C:23:84:48:8D
+```
+
+Expect `ServicesResolved: yes` before control writes.
+
+If you still get write errors:
+
+```bash
+sudo systemctl restart bluetooth
+sudo rfkill unblock bluetooth
+```
+
+Then rerun the app with a longer scan timeout:
+
+```bash
+./build/autonomous_centerline_controller_pure_pursuit_delay_fixed_cpp \
+    --name DRiFT-ED5C2384488D \
+    --scan-timeout 10
+```
+
+When running over SSH without desktop, GUI windows are automatically disabled (headless mode).

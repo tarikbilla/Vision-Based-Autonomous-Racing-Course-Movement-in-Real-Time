@@ -2229,17 +2229,21 @@ class LinuxBleClient final : public BleClient {
             return false;
         }
 
+        std::cout << "[BLE] Waiting for GATT services to resolve...\n";
+        std::flush(std::cout);
         bool services_ready = false;
-        for (int i = 0; i < 40; ++i) {
+        for (int i = 0; i < 30; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
             const std::string info = run_capture("bluetoothctl info " + mac_ + " 2>/dev/null");
             if (info.find("ServicesResolved: yes") != std::string::npos) {
                 services_ready = true;
                 break;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
         if (!services_ready) {
-            std::cerr << "[BLE] Warning: Services not resolved yet; continuing anyway.\n";
+            std::cerr << "[BLE] Timed out waiting for ServicesResolved. Trying anyway...\n";
+        } else {
+            std::cout << "[BLE] Services resolved.\n";
         }
 
         // 4. Open a persistent bluetoothctl pipe for GATT writes
@@ -2249,18 +2253,16 @@ class LinuxBleClient final : public BleClient {
             return false;
         }
 
-        // 5. Reconnect in same bluetoothctl session, then enter GATT menu.
-        // This avoids context mismatch between one-shot connect and pipe writes.
-        fputs("power on\n", pipe_);
-        std::string connect_cmd = "connect " + mac_ + "\n";
-        fputs(connect_cmd.c_str(), pipe_);
+        // 5. Enter GATT menu in persistent bluetoothctl session.
+        // Do NOT reconnect here; link is already up from step 3.
         fputs("menu gatt\n", pipe_);
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
         // 6. Select the write characteristic by UUID.
         std::string sel = "select-attribute " + write_uuid_ + "\n";
         fputs(sel.c_str(), pipe_);
         fflush(pipe_);
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
         connected_ = true;
         std::cout << "[BLE] Connected! GATT write pipe ready.\n";
@@ -2273,16 +2275,16 @@ class LinuxBleClient final : public BleClient {
         if (!connected_ || !pipe_) return false;
 
         // Build for bluetoothctl gatt menu:
-        //   write "xx xx ..." [offset] [type]
-        // Use quoted byte list and "command" write type to reduce blocking.
+        //   write 0xbf 0x0a 0x00 ...
+        // 0x-prefixed tokens avoid parser errors like "Invalid value at index 0".
         std::ostringstream cmd;
-        cmd << "write \"";
-        for (size_t i = 0; i < data.size(); ++i) {
-            if (i > 0) cmd << ' ';
+        cmd << "write";
+        for (auto b : data) {
+            cmd << " 0x";
             cmd << std::hex << std::setw(2) << std::setfill('0')
-                << static_cast<int>(data[i]);
+                << static_cast<int>(b);
         }
-        cmd << "\" 0 command\n";
+        cmd << "\n";
 
         std::string s = cmd.str();
         if (fputs(s.c_str(), pipe_) == EOF) {
