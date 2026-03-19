@@ -2249,12 +2249,13 @@ class LinuxBleClient final : public BleClient {
         if (!connected_ || !pipe_) return false;
 
         // Build for bluetoothctl gatt menu:
-        //   write <data=xx xx ...>
-        // No 0x prefixes.
+        //   write <hex-payload>
+        // Send payload as ONE argument (continuous hex string), otherwise
+        // bluetoothctl can parse later bytes as offset/type args.
         std::ostringstream cmd;
-        cmd << "write";
+        cmd << "write ";
         for (auto b : data) {
-            cmd << " " << std::hex << std::setw(2) << std::setfill('0')
+            cmd << std::hex << std::setw(2) << std::setfill('0')
                 << static_cast<int>(b);
         }
         cmd << "\n";

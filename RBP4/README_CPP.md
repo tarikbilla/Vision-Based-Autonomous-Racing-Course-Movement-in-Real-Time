@@ -1,7 +1,7 @@
 # Autonomous Centerline Controller — Pure Pursuit (C++)
 
 > **Target platform: Raspberry Pi 4 (Linux/BlueZ)**
-> Native BLE via `bluetoothctl` + `gatttool` — no external dependencies beyond BlueZ and OpenCV.
+> Native BLE via `bluetoothctl` (BlueZ) — no external dependencies beyond BlueZ and OpenCV.
 
 ---
 
@@ -12,7 +12,7 @@
 | `autonomous_centerline_controller_pure_pursuit_delay_fixed.cpp` | C++ source |
 | `CMakeLists.txt` | CMake build config |
 | `build.sh` | One-shot install + build script |
-| `centerline.csv` | Centerline waypoints (required at runtime) |
+| `centerline.csv` | Centerline waypoints (loaded if present; can be rebuilt at runtime with `M`) |
 
 ---
 
@@ -23,7 +23,7 @@
 | CMake ≥ 3.16 | `apt install cmake` |
 | C++17 compiler | `apt install build-essential` |
 | OpenCV 4 | `apt install libopencv-dev` |
-| BlueZ (BLE) | `apt install bluez bluez-tools` |
+| BlueZ (BLE) | `apt install bluez` |
 
 ---
 
@@ -40,7 +40,7 @@ Or manually:
 
 ```bash
 sudo apt-get update -y
-sudo apt-get install -y cmake build-essential libopencv-dev bluez bluez-tools
+sudo apt-get install -y cmake build-essential libopencv-dev bluez
 
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
@@ -67,7 +67,7 @@ cmake --build build -j$(nproc)
 | `--name <device-name>` | string | BLE device name to scan and connect to |
 | `--address <MAC>` | string | BLE device MAC address (e.g. `AA:BB:CC:DD:EE:FF`) |
 | `--discover` | flag | Scan and print all nearby BLE devices, then exit |
-| `--scan-timeout <sec>` | float | BLE scan duration in seconds (default: 5) |
+| `--scan-timeout <sec>` | float | BLE scan duration in seconds (default: 6) |
 | `--max-deg <deg>` | float | Maximum steering angle in degrees |
 | `--steer-smooth <val>` | float | Steering smoothing factor (0–100) |
 | `--ratio <val>` | float | Pure-pursuit lookahead ratio (0–1) |
@@ -119,9 +119,9 @@ cmake --build build -j$(nproc)
 
 ## BLE Notes
 
-- BLE uses **BlueZ** (`bluetoothctl` for scan/connect, `gatttool` for GATT writes).
+- BLE uses **BlueZ** (`bluetoothctl` for scan/connect and GATT writes).
 - `--name` triggers a BLE scan for `<scan-timeout>` seconds, resolves the device name to a MAC, then connects.
 - `--address` connects directly without scanning.
 - Make sure the Bluetooth adapter is powered on: `bluetoothctl power on`
-- If `gatttool` is missing: `sudo apt install bluez-tools`
-- BLE requires root or the binary added to the `bluetooth` group: `sudo usermod -aG bluetooth $USER`
+- `gatttool` is not required (deprecated).
+- If permissions fail, run with `sudo`.
