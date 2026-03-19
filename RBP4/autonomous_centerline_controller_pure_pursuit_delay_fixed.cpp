@@ -2135,24 +2135,60 @@ static std::string resolve_name_to_mac(const std::string& name, int timeout_sec)
         }
     }
 
+    auto to_lower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return s;
+    };
+
+    const std::string wanted = to_lower(name);
+    std::vector<std::pair<std::string, std::string>> discovered;
+
     std::istringstream ss(clean);
     std::string line;
     while (std::getline(ss, line)) {
-        if (line.find(name) != std::string::npos) {
-            // Line format: "Device AA:BB:CC:DD:EE:FF Name"
-            std::istringstream ls(line);
-            std::string tok;
-            ls >> tok; // "Device" or "[NEW]" "Device"
-            if (tok == "[NEW]" || tok == "[CHG]") ls >> tok; // skip prefix
-            if (tok == "Device") {
-                ls >> tok; // MAC
-                if (tok.size() == 17 && tok[2] == ':') {
-                    std::cout << "[BLE] Resolved '" << name << "' -> " << tok << "\n";
-                    return tok;
+        // Line format: "Device AA:BB:CC:DD:EE:FF Name"
+        std::istringstream ls(line);
+        std::string tok;
+        ls >> tok; // "Device" or "[NEW]" "Device"
+        if (tok == "[NEW]" || tok == "[CHG]") ls >> tok; // skip prefix
+        if (tok == "Device") {
+            std::string mac;
+            ls >> mac;
+            std::string dev_name;
+            std::getline(ls, dev_name);
+            while (!dev_name.empty() && std::isspace(static_cast<unsigned char>(dev_name.front()))) {
+                dev_name.erase(dev_name.begin());
+            }
+
+            if (mac.size() == 17 && mac[2] == ':') {
+                discovered.push_back({mac, dev_name});
+
+                const std::string dev_name_lower = to_lower(dev_name);
+                const std::string mac_lower = to_lower(mac);
+                if (!wanted.empty() && (dev_name_lower.find(wanted) != std::string::npos || mac_lower == wanted)) {
+                    std::cout << "[BLE] Resolved '" << name << "' -> " << mac << "\n";
+                    return mac;
                 }
             }
         }
     }
+
+    std::vector<std::pair<std::string, std::string>> drift_like;
+    for (const auto& dev : discovered) {
+        const std::string n = to_lower(dev.second);
+        if (n.find("drift") != std::string::npos || n.find("dr!ft") != std::string::npos) {
+            drift_like.push_back(dev);
+        }
+    }
+
+    if (drift_like.size() == 1) {
+        std::cout << "[BLE] Requested name '" << name << "' not found; using discovered DRiFT device '"
+                  << drift_like[0].second << "' -> " << drift_like[0].first << "\n";
+        return drift_like[0].first;
+    }
+
     std::cerr << "[BLE] Device '" << name << "' not found during scan.\n";
     std::cerr << "[BLE] Raw output:\n" << clean << "\n";
     return {};
