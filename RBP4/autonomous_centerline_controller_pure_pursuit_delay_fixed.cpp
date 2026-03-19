@@ -1574,6 +1574,13 @@ void control_loop() {
 }
 
 void cv_thread() {
+    const char* display_env = std::getenv("DISPLAY");
+    const char* wayland_env = std::getenv("WAYLAND_DISPLAY");
+    const bool gui_enabled = (display_env && *display_env) || (wayland_env && *wayland_env);
+    if (!gui_enabled) {
+        std::cout << "[CV] Headless mode: DISPLAY/WAYLAND not set, GUI disabled.\n";
+    }
+
     CamThread cam(CAM_INDEX, FRAME_W, FRAME_H);
     cam.start();
 
@@ -1888,12 +1895,14 @@ void cv_thread() {
                             2);
             }
 
-            cv::imshow("Autonomous Controller [M=centerline | R=log | A=auto | V=mask | L=lighting | D=debug | Q=quit]", out);
-            if (show_mask) {
-                cv::imshow("fg_mask", fg);
+            int key = -1;
+            if (gui_enabled) {
+                cv::imshow("Autonomous Controller [M=centerline | R=log | A=auto | V=mask | L=lighting | D=debug | Q=quit]", out);
+                if (show_mask) {
+                    cv::imshow("fg_mask", fg);
+                }
+                key = cv::waitKey(1) & 0xff;
             }
-
-            const int key = cv::waitKey(1) & 0xff;
             if (key == 'q' || key == 'Q') {
                 cv_stop.store(true);
                 break;
@@ -1951,7 +1960,9 @@ void cv_thread() {
     }
 
     cam.stop();
-    cv::destroyAllWindows();
+    if (gui_enabled) {
+        cv::destroyAllWindows();
+    }
     std::cout << "[CV] Stopped\n";
     cv_stop.store(true);
 }
@@ -2218,6 +2229,19 @@ class LinuxBleClient final : public BleClient {
             return false;
         }
 
+        bool services_ready = false;
+        for (int i = 0; i < 40; ++i) {
+            const std::string info = run_capture("bluetoothctl info " + mac_ + " 2>/dev/null");
+            if (info.find("ServicesResolved: yes") != std::string::npos) {
+                services_ready = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+        if (!services_ready) {
+            std::cerr << "[BLE] Warning: Services not resolved yet; continuing anyway.\n";
+        }
+
         // 4. Open a persistent bluetoothctl pipe for GATT writes
         pipe_ = popen("bluetoothctl", "w");
         if (!pipe_) {
@@ -2249,16 +2273,16 @@ class LinuxBleClient final : public BleClient {
         if (!connected_ || !pipe_) return false;
 
         // Build for bluetoothctl gatt menu:
-        //   write <hex-payload>
-        // Send payload as ONE argument (continuous hex string), otherwise
-        // bluetoothctl can parse later bytes as offset/type args.
+        //   write "xx xx ..." [offset] [type]
+        // Use quoted byte list and "command" write type to reduce blocking.
         std::ostringstream cmd;
-        cmd << "write ";
-        for (auto b : data) {
+        cmd << "write \"";
+        for (size_t i = 0; i < data.size(); ++i) {
+            if (i > 0) cmd << ' ';
             cmd << std::hex << std::setw(2) << std::setfill('0')
-                << static_cast<int>(b);
+                << static_cast<int>(data[i]);
         }
-        cmd << "\n";
+        cmd << "\" 0 command\n";
 
         std::string s = cmd.str();
         if (fputs(s.c_str(), pipe_) == EOF) {
