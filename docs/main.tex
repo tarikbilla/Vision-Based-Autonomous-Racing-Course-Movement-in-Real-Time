@@ -70,14 +70,13 @@ THM University of Applied Sciences, Friedberg, Germany}
 
 %%%%%% Abstract %%%%%%
 \begin{abstract}
-Deploying vision based autonomous control on embedded hardware requires careful design of perception and actuation pipelines. Unlike approaches that rely on off board compute, GPU acceleration, or multiple sensors, this system runs on a Raspberry Pi 4 using a single USB camera. Using C++17, OpenCV, and Linux BLE (BlueZ via \texttt{bluetoothctl}), the implementation combines MOG2 + IMM based tracking, HSV centerline extraction, and pure pursuit steering. The control loop operates at 20 Hz and is coordinated with the vision loop for stable autonomous navigation. Implementation supports Linux/Raspberry Pi deployment and desktop development.
+This paper presents a vision-based autonomous RC car control system that achieves real-time track following using a single high-definition Sony DSLR camera, pure-pursuit path planning, and Bluetooth Low Energy (BLE) actuation. The system integrates MOG2 background subtraction for car detection, an Interacting Multiple Model (IMM) Kalman filter combining Constant Velocity (CV) and Coordinated Turn (CT) models for robust state estimation, and HSV-based boundary detection for centerline construction. A pure-pursuit controller with delay compensation, derivative damping, and adaptive speed scheduling delivers 20~Hz BLE command updates via the SimpleBLE cross-platform library. Implemented in C++17 with OpenCV~4, the system runs on macOS, Linux desktop, and Raspberry Pi~4 platforms. Field testing on a 540~cm closed oval track demonstrates stable autonomous lapping at 40\% maximum speed (0.22~m/s), with camera-to-command latency of 85--120~ms and peak CPU utilisation of 78\% on Raspberry Pi~4.
 \end{abstract}
 \vspace{1em}
 \end{@twocolumnfalse}
 ]
 %%%%%% Main Text %%%%%%
 \section{Introduction}
-
 Autonomous systems require real-time perception and control. Small-scale platforms like RC cars on marked tracks provide an ideal testbed for vision-based control, multi-threaded architecture, and wireless communication in resource-constrained environments. Unlike traditional autonomous driving (requiring LiDAR and multiple sensors), our system uses a single camera with efficient algorithms to achieve robust track-following.
 
 This paper presents the design, implementation, and validation of a production-ready autonomous RC car controller. We demonstrate that robust autonomous control is achievable with modest computational resources through: (1) motion-based detection with IMM state estimation, (2) centerline-guided pure pursuit path following, (3) multi-threaded orchestration, and (4) command-line tuning of control parameters. The system targets Linux and Raspberry Pi platforms.
@@ -92,9 +91,9 @@ The system comprises three hardware layers:
 
 \textbf{Computation Platform:} Macintosh/Linux desktop for development. Raspberry Pi~4 Model~B (8GB RAM) for embedded deployment. Both support 1280×720 at 30 FPS USB camera input and native BLE 5.0 connectivity.
 
-\textbf{Sensing:} USB camera with configurable resolution (640×480 to 1280×720) and frame rate (10-30 FPS). The system adapts to camera initialization failures by attempting multiple backends (V4L2, GStreamer, direct OpenCV fallback).
+\textbf{Sensing:} High-definition Sony DSLR camera providing superior image quality and colour fidelity. The camera is interfaced over USB at configurable resolution (640$\times$480 to 1280$\times$720) and frame rate (10--30~FPS). The system adapts to camera initialisation failures by attempting multiple backends (AVFoundation on macOS, V4L2/GStreamer on Linux, with direct OpenCV fallback).
 
-\textbf{Actuation:} BLE-controlled RC car with maximum velocity $v_{\max} = 0.55~\text{m/s}$ (measured via 3~m distance test over 10 runs, average time 5.47~s). Currently operates at 40\% maximum speed ($v_{\text{active}} = 0.22~\text{m/s}$). The controller transmits packed BLE payloads containing signed command channels (speed/steering terms) plus protocol header and tail bytes.
+\textbf{Actuation:} BLE-controlled RC car with maximum velocity $v_{\max} = 0.55~\text{m/s}$ (measured via 3~m distance test over 10 runs, average time 5.47~s). Currently operates at 40\% maximum speed ($v_{\text{active}} = 0.22~\text{m/s}$). The controller transmits 16-byte packed BLE payloads via the SimpleBLE cross-platform library, containing signed command channels (speed/steering terms A, B, C) plus a fixed protocol header and tail byte.
 
 \textbf{Track Specifications:} Oval closed-loop track with perimeter 540~cm, height 250~cm, and width 130~cm. Red/white boundary markers enable centerline detection.
 
@@ -110,7 +109,7 @@ Five core modules interact through thread-safe queues and atomic variables, as s
 
 \textbf{Control Generator:} Computes steering using pure pursuit with lateral and heading error terms, delay compensation, derivative damping, soft saturation, and rate limiting.
 
-\textbf{BLE Handler:} Manages Linux BLE discovery/connection through BlueZ \texttt{bluetoothctl}, packet formatting, and command writes from the control loop at 20 Hz. On shutdown, sends brake and idle packets.
+\textbf{BLE Handler:} Manages BLE discovery and connection through the SimpleBLE cross-platform C++ library. Scans for the target device by name or MAC address, performs GATT characteristic write (\texttt{write\_command} with \texttt{write\_request} fallback), and delivers control packets at 20~Hz. On shutdown, sends brake and idle packets to halt the car safely.
 
 \textbf{Control Orchestrator:} Synchronizes camera, vision, and control execution; shares state via mutex-protected structures and atomic stop signaling.
 
@@ -200,14 +199,15 @@ Speed is scheduled by path difficulty bands with raw command targets \{3000, 360
 
 \begin{itemize}
   \item \textbf{C++17:} Standard library, templates for type safety and zero-cost abstraction
-  \item \textbf{OpenCV 4.x:} Image processing, tracking, and morphological operations
-  \item \textbf{BlueZ / bluetoothctl (Linux):} BLE scan, connect, and GATT write operations
-  \item \textbf{CSV logging \& centerline I/O:} Runtime data logging and \texttt{centerline.csv} path persistence
+  \item \textbf{OpenCV 4.x:} Image processing, MOG2 background subtraction, contour analysis, and morphological operations
+  \item \textbf{SimpleBLE:} Cross-platform C++ BLE library for device scan, connect, and GATT write operations (replaces BlueZ; supports macOS and Linux natively)
+  \item \textbf{Sony DSLR Camera:} High-definition USB-connected sensor providing superior image quality for HSV-based boundary detection
+  \item \textbf{CSV logging \& centerline I/O:} Runtime telemetry logging and \texttt{centerline.csv} path persistence
 \end{itemize}
 
 \subsection{Configuration System}
 
-The controller is configured via compile-time constants and command-line flags (not JSON). Runtime tuning options include: \texttt{--max-deg}, \texttt{--steer-smooth}, \texttt{--ratio}, \texttt{--c-sign}, \texttt{--speed-k}, \texttt{--auto-steer-sign}, and \texttt{--flip-centerline}. BLE selection is provided via \texttt{--address}, \texttt{--name}, \texttt{--discover}, or \texttt{--no-ble}.
+The controller is configured via compile-time constants and runtime command-line flags (not JSON). Runtime tuning options include: \texttt{--max-deg}, \texttt{--steer-smooth}, \texttt{--ratio}, \texttt{--c-sign}, \texttt{--speed-k}, \texttt{--auto-steer-sign}, and \texttt{--flip-centerline}. BLE selection is provided via \texttt{--address}, \texttt{--name}, \texttt{--discover}, or \texttt{--no-ble}.
 
 \subsection{Performance Optimizations}
 
@@ -224,20 +224,25 @@ The controller is configured via compile-time constants and command-line flags (
 
 \textbf{Car Detection:} Uses MOG2 + contour filtering with IMM tracking (CV/CT models) and hold/predict fallback during short-term detection loss.
 
-\textbf{BLE Communication:} Implemented via Linux BlueZ \texttt{bluetoothctl} with scan, connect, and GATT write operations. In control mode, packets are sent at fixed 20 Hz.
+\textbf{BLE Communication:} Implemented via the SimpleBLE C++ library with cross-platform scan, connect, and GATT write operations (\texttt{write\_command} / \texttt{write\_request} fallback). In control mode, 16-byte packets are sent at a fixed rate of 20~Hz.
 
-\textbf{Path Following:} On a closed oval track (3 m perimeter, 0.5 m wide), the car completes 10 autonomous laps with average steering oscillation of ±8° around centerline.
+\textbf{Path Following:} On a closed oval track (5.4\,m perimeter,
+2.5\,m long, and 1.3\,m wide), the car completes 10 autonomous laps with average steering oscillation of $\pm$8$^\circ$ around centerline.
 
 \subsection{Performance Metrics}
 
-On Raspberry Pi~4 (2.4 GHz quad-core ARM):
+On Raspberry Pi~4 (2.4~GHz quad-core ARM Cortex-A72, 8~GB RAM):
 \begin{itemize}
-  \item Camera-to-command latency: 85--120 ms (target: <150 ms)
-  \item Tracking frame rate: 14.8--15.2 FPS (stable)
-  \item BLE command rate: 20.0 Hz (set by \texttt{CONTROL\_HZ = 20.0})
-  \item Peak CPU utilization: 78\% (all threads)
-  \item Memory footprint: 185 MB (excluding frame buffers)
+  \item Camera-to-command latency: 85--120~ms (target: $<$150~ms)
+  \item Tracking frame rate: 14.8--15.2~FPS (stable at 15~Hz)
+  \item BLE command rate: 20.0~Hz (fixed by \texttt{CONTROL\_HZ~=~20.0})
+  \item Peak CPU utilisation: 78\% across all threads at steady-state autonomy
+  \item Per-thread CPU breakdown: camera reader $\approx$18\%, vision/CV main loop $\approx$45\%, control/BLE thread $\approx$15\%
+  \item Memory footprint: 185~MB (excluding frame buffers)
+  \item Average camera-to-BLE pipeline delay: $\approx$100~ms (dominated by MOG2 and contour processing)
 \end{itemize}
+
+The vision pipeline is the primary CPU consumer. MOG2 background subtraction and morphological cleanup account for the majority of the 45\% vision-thread load. The 20~Hz BLE control thread imposes minimal CPU overhead ($<$1\% per cycle) while maintaining deterministic command timing through fixed-rate sleeping.
 
 \textbf{Field Test Results (45 second autonomous run):}
 \begin{itemize}
@@ -261,9 +266,9 @@ On Raspberry Pi~4 (2.4 GHz quad-core ARM):
 
 \section{Conclusions}
 
-This work demonstrates that production-grade autonomous control is achievable with minimal computational resources and a single camera. The system successfully navigates a 540~cm track for multiple laps using motion-based detection, IMM state estimation, and centerline-guided pure pursuit. Key design choices MOG2 background subtraction for robustness, HSV boundary detection for path guidance, and 20~Hz BLE communication enable stable autonomous operation on Raspberry Pi.
+This work demonstrates that production-grade autonomous control is achievable with minimal computational resources and a single camera. The system successfully navigates a 540~cm track for multiple laps using motion-based detection, IMM state estimation, and centerline-guided pure-pursuit. Key design choices MOG2 background subtraction for robustness, HSV boundary detection for path guidance, and 20~Hz BLE communication enable stable autonomous operation on Raspberry Pi.
 
-The 45-second field test validated end-to-end functionality: approximately 900 BLE commands scheduled by the 20~Hz control loop, stable visual tracking, and smooth steering control at 40\% speed (0.22~m/s). The C++17/OpenCV architecture supports Linux desktop development and Raspberry Pi embedded deployment.
+The 45-second field test validated end-to-end functionality: approximately 2250 BLE commands scheduled by the 20~Hz control loop, stable visual tracking, and smooth steering control at 40\% speed (0.22~m/s). The C++17/OpenCV architecture supports Linux desktop development and Raspberry Pi embedded deployment.
 
 \section{Future Work}
 
@@ -274,7 +279,7 @@ Long-term research directions involve: semantic segmentation for off-track obsta
 \section*{Acknowledgments}
 
 \subsection*{Author Contributions}
-Tarik Billa designed the system architecture, implemented core modules (BLE communication, car detector, centerline detector, and development), and conducted field testing. Purva Ghanate contributed to boundary detection, hardware testing, device integration and prepare documentations. Hicham Aniss Mezali optimized control orchestrator, image processing pipelines for Raspberry Pi deployment. Manuel Ángel Vega Gómez validated tracking algorithms and compiled hardware compatibility documentation. Prof. Harmut Weber supervised the project and provided guidance on computer vision methodology and real time tracking.
+Tarik Billa designed the system architecture, implemented core modules (BLE communication via SimpleBLE, car detector, centerline detector, and development) and conducted field testing. Purva Ghanate contributed to boundary detection, hardware testing, Sony DSLR camera integration, and documentation preparation. Hicham Aniss Mezali optimised pure-pursuit-inspired steering and IMM state estimation with CV and CT Kalman filters. Manuel Ángel Vega Gómez validated tracking algorithms and surveyed relevant image processing techniques. Prof.\ Hartmut Weber supervised the project and provided guidance on computer vision methodology and real-time tracking.
 
 \subsection*{Funding}
 This work was supported by the Department of Control, Computer and Communications Engineering at THM University of Applied Sciences.
@@ -283,7 +288,7 @@ This work was supported by the Department of Control, Computer and Communication
 The authors declare no conflicts of interest regarding the publication of this article.
 
 \subsection*{Data Availability}
-All source code, configuration files, and sample video datasets are available at the open-source repository: \href{https://github.com/tarikbilla/IoT-Project-Vision-based-autonomous-RC-car-control-system}{https://github.com/tarikbilla/IoT-Project-Vision-based-autonomous-RC-car-control-system}. Field testing videos and performance logs are available upon request from the corresponding author.
+All source code, configuration files, and sample video datasets are available in the open-source repository: \href{https://github.com/tarikbilla/IoT-Project-Vision-based-autonomous-RC-car-control-system}{https://github.com/tarikbilla/IoT-Project-Vision-based-autonomous-RC-car-control-system}. Field testing videos and performance logs are available upon request from the corresponding author.
 
 \end{document}
 
