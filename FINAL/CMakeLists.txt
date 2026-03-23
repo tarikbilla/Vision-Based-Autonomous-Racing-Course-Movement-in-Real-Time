@@ -51,6 +51,25 @@ else()
     target_compile_options(VisionRC_FINAL PRIVATE -Wall -Wextra -O2)
 endif()
 
+# ── Benchmark tool ─────────────────────────────────────────────────
+add_executable(VisionRC_Benchmark src/benchmark.cpp
+    src/path_detector.cpp
+    src/car_detector.cpp
+    src/imm_tracker.cpp
+)
+target_include_directories(VisionRC_Benchmark PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(VisionRC_Benchmark PRIVATE
+    ${OpenCV_LIBS}
+)
+if(MSVC)
+    target_compile_options(VisionRC_Benchmark PRIVATE /W4 /O2)
+else()
+    target_compile_options(VisionRC_Benchmark PRIVATE -Wall -Wextra -O2)
+endif()
+
 # ── Summary ────────────────────────────────────────────────────────
 message(STATUS "")
 message(STATUS "═══ VisionRC_FINAL Configuration ═══")
