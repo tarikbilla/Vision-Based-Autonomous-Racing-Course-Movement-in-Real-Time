@@ -9,7 +9,7 @@ set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 find_package(OpenCV REQUIRED)
 
 add_executable(autonomous_centerline_controller_pure_pursuit_delay_fixed_cpp
-    autonomous_centerline_controller_pure_pursuit_delay_fixed.mm
+    main.mm
 )
 
 target_link_libraries(autonomous_centerline_controller_pure_pursuit_delay_fixed_cpp

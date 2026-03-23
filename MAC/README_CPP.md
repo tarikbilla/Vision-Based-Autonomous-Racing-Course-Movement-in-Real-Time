@@ -9,7 +9,7 @@
 
 | File | Purpose |
 |---|---|
-| `autonomous_centerline_controller_pure_pursuit_delay_fixed.mm` | Objective-C++ source (CoreBluetooth) |
+| `main.mm` | Objective-C++ source (CoreBluetooth) |
 | `CMakeLists.txt` | CMake build config (links CoreBluetooth + Foundation) |
 | `build.sh` | One-shot build script |
 | `centerline.csv` | Centerline waypoints (required at runtime) |

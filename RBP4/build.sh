@@ -16,11 +16,27 @@ sudo apt-get install -y \
     build-essential \
     libopencv-dev \
     bluez \
-    bluez-tools
+    bluez-tools \
+    git \
+    libdbus-1-dev \
+    libbluetooth-dev
+
+if ! pkg-config --exists simpleble; then
+    echo "==> SimpleBLE not found. Building C++ SimpleBLE from source..."
+    TMP_SIMPLEBLE_DIR="/tmp/simpleble-src"
+    rm -rf "$TMP_SIMPLEBLE_DIR"
+    git clone --depth 1 https://github.com/OpenBluetoothToolbox/SimpleBLE.git "$TMP_SIMPLEBLE_DIR"
+    cmake -S "$TMP_SIMPLEBLE_DIR" -B "$TMP_SIMPLEBLE_DIR/build" -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$TMP_SIMPLEBLE_DIR/build" -j"$(nproc)"
+    sudo cmake --install "$TMP_SIMPLEBLE_DIR/build"
+    sudo ldconfig || true
+else
+    echo "==> SimpleBLE already available."
+fi
 
 # ── 2. Build C++ binary ──────────────────────────────────────
 echo "==> Building C++ controller with CMake..."
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/local
 cmake --build build -j"$(nproc)"
 
 echo ""

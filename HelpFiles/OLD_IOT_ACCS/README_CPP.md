@@ -118,3 +118,11 @@ Or use the provided build script:
 chmod +x build.sh
 ./build.sh
 ```
+
+
+Run Python
+
+```bash
+cd /Users/tarikbilla/Projects/IoT-Project-Vision-based-autonomous-RC-car-control-system/HelpFiles/OLD_IOT_ACCS
+./.venv/bin/python ./autonomous_centerline_controller_pure_pursuit_delay_fixed.py --name DRiFT-ED5C2384488D --max-deg 24 --steer-smooth 70 --ratio 0.9 --c-sign -1 --speed-k 0.08
+```

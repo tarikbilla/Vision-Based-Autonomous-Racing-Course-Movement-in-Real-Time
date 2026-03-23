@@ -1,7 +1,7 @@
 # Autonomous Centerline Controller — Pure Pursuit (C++)
 
 > **Target platform: Raspberry Pi 4 (Linux/BlueZ)**
-> Native BLE via `bluetoothctl` (BlueZ) — no external dependencies beyond BlueZ and OpenCV.
+> C++ BLE backends: optional **SimpleBLE** (preferred) with automatic fallback to `bluetoothctl` (BlueZ).
 
 ---
 
@@ -9,7 +9,7 @@
 
 | File | Purpose |
 |---|---|
-| `autonomous_centerline_controller_pure_pursuit_delay_fixed.cpp` | C++ source |
+| `main.cpp` | C++ source |
 | `CMakeLists.txt` | CMake build config |
 | `build.sh` | One-shot install + build script |
 | `centerline.csv` | Centerline waypoints (loaded if present; can be rebuilt at runtime with `M`) |
@@ -119,12 +119,47 @@ cmake --build build -j$(nproc)
 
 ## BLE Notes
 
-- BLE uses **BlueZ** (`bluetoothctl` for scan/connect and GATT writes).
+- BLE is **C++ only**. Runtime tries **SimpleBLE** first (if compiled), then falls back to **BlueZ** (`bluetoothctl`).
 - `--name` triggers a BLE scan for `<scan-timeout>` seconds, resolves the device name to a MAC, then connects.
 - `--address` connects directly without scanning.
 - Make sure the Bluetooth adapter is powered on: `bluetoothctl power on`
 - `gatttool` is not required (deprecated).
 - If permissions fail, run with `sudo`.
+- For BlueZ write mode issues, set `BLUEZ_WRITE_TYPE`:
+    - `BLUEZ_WRITE_TYPE=command` (default in current code)
+    - `BLUEZ_WRITE_TYPE=request`
+    - `BLUEZ_WRITE_TYPE=default`
+- To force BlueZ backend even when SimpleBLE is available: `FORCE_BLUEZ_CLI=1`.
+
+---
+
+## CPU / Camera Performance Tuning (Raspberry Pi)
+
+- Default Linux camera mode is low-definition for lower CPU: **`640x360 @ 20 FPS`**.
+- You can override at runtime with environment variables:
+    - `CAM_FRAME_W` (range `160..1920`)
+    - `CAM_FRAME_H` (range `120..1080`)
+    - `CAM_FPS` (range `5..60`)
+
+Example (very low CPU mode):
+
+```bash
+CAM_FRAME_W=424 CAM_FRAME_H=240 CAM_FPS=12 \
+./build/autonomous_centerline_controller_pure_pursuit_delay_fixed_cpp \
+        --name DRiFT-ED5C2384488D \
+        --max-deg 24 --steer-smooth 70 \
+        --ratio 0.9 --c-sign -1 --speed-k 0.08
+```
+
+Balanced mode:
+
+```bash
+CAM_FRAME_W=640 CAM_FRAME_H=360 CAM_FPS=15 \
+./build/autonomous_centerline_controller_pure_pursuit_delay_fixed_cpp \
+        --name DRiFT-ED5C2384488D \
+        --max-deg 24 --steer-smooth 70 \
+        --ratio 0.9 --c-sign -1 --speed-k 0.08
+```
 
 ---
 
