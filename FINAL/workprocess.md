@@ -3,7 +3,7 @@
 > **Project:** Vision-Based Autonomous RC Car Control System  
 > **Language:** C++17  
 > **Build System:** CMake 3.16+  
-> **Platform:** macOS (Apple Silicon) / Linux  
+> **Platform:** Linux  
 > **Compiler Flags:** `-Wall -Wextra -O2`
 
 ---
@@ -35,7 +35,7 @@
 
 ### Step 3: Device Matching
 - **Name matching:** Case-insensitive substring search; also matches common DRiFT car name patterns (`DRiFT`, `DRIFT`, `DR!FT`)
-- **Address matching:** Case-insensitive exact MAC comparison; also checks if the peripheral name contains the address (handles macOS UUID-style addresses)
+- **Address matching:** Case-insensitive exact MAC comparison; also checks if the peripheral name contains the address
 - Return the first matching peripheral for connection
 
 ### Step 4: BLE Connection Establishment
@@ -73,7 +73,6 @@
 
 **Technologies / Libraries / Algorithms:**
 - **OpenCV 4.x** — `cv::VideoCapture`, `cv::CAP_PROP_*` settings
-- **AVFoundation** — macOS camera backend (`cv::CAP_AVFOUNDATION`)
 - **V4L2** — Linux camera backend (`cv::CAP_V4L2`)
 - **DirectShow / MSMF** — Windows camera backends (`cv::CAP_DSHOW`, `cv::CAP_MSMF`)
 - **MJPEG Codec** — Hardware-accelerated frame compression (`cv::VideoWriter::fourcc('M','J','P','G')`)
@@ -85,7 +84,7 @@
 ### Step 1: Camera Backend Selection
 - Detect operating system at compile time (`__APPLE__`, `_WIN32`, Linux default)
 - Try platform-preferred backend first, then fall back to `cv::CAP_ANY`
-- macOS: AVFoundation → ANY; Linux: V4L2 → ANY; Windows: DirectShow → MSMF → ANY
+- Linux: V4L2 → ANY; Windows: DirectShow → MSMF → ANY
 
 ### Step 2: Camera Initialization & Configuration
 - Open camera by index (default index 0) with `cv::VideoCapture::open()`
@@ -596,6 +595,6 @@
 | **Control** | PD controller, soft saturation (tanh), rate limiter, first-order low-pass filter, delay compensation, 3-tier speed scheduling |
 | **Concurrency** | std::thread, std::mutex, std::atomic, std::condition_variable, producer-consumer pattern |
 | **Signal Processing** | EMA (exponential moving average), adaptive alpha, deadband, cyclic smoothing |
-| **Camera** | AVFoundation (macOS), V4L2 (Linux), MJPEG codec, dedicated grab thread |
+| **Camera** | V4L2 (Linux), MJPEG codec, dedicated grab thread |
 | **Data Logging** | CSV telemetry (50+ fields), filesystem I/O, POSIX timestamps |
-| **Platform** | macOS (Apple Silicon), Linux (Ubuntu/Debian), cross-platform via CMake |
+| **Platform** | Linux (Ubuntu/Debian), cross-platform via CMake |
