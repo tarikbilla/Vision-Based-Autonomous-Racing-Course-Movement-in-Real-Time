@@ -145,7 +145,7 @@ Lower `--speed-k` so less speed is subtracted while steering.
 ### Speed tuning note
 
 - To increase speed with your current setup, reduce `--speed-k` from `0.08` to `0.03` or `0.02`.
-- Auto top speed is still limited by code constants (current schedule cap is `AUTO_MAX_SPEED_RAW = 4200`).
+- Auto top speed is still limited by code constants (current schedule cap is `AUTO_MAX_SPEED_RAW = 8200`).
 
 Other options:
 - `--scan-timeout <s>`
